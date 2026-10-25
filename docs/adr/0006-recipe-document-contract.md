@@ -56,7 +56,8 @@ The root of `recipes/<id>/recipe.yaml` contains identity, categorization, and bi
 
 | Field | Type | Description |
 |---|---|---|
-| `id` | `string` | Unique recipe identifier. Must match directory name. |
+| `id` | `string` | Unique semantic recipe identifier (`^[a-z0-9]+(-[a-z0-9]+)*$`). Must match directory name (`recipes/<id>/`). Used for internal component references (`component: mornay-sauce`). |
+| `uid` | `string` | Immutable 6-character lowercase Crockford Base32 identifier (`^[0-9a-hjkmnp-tv-z]{6}$`, excluding `i, l, o, u`, e.g. `k8m2x9`). Unique corpus-wide. Used in public URLs (`/<lang>/<section>/<uid>-<slug>/`), permanent shortlinks (`/<lang>/<section>/<uid>/`), and collection query parameters (`?r=<uid1>,<uid2>`). |
 | `state` | `{ cs?: PublicationState, en?: PublicationState }` | Per-language publication state: `'draft'`, `'unverified'`, or `'reviewed'`. |
 | `title` | `{ cs?: string, en?: string }` | Human-readable title per language. |
 | `slug` | `{ cs?: string, en?: string }` | ASCII kebab-case URL slug per language. Unique corpus-wide per language. |
@@ -394,6 +395,7 @@ images:
 
 ```yaml
 id: mornay-sauce
+uid: k8m2x9
 state:
   cs: reviewed
   en: reviewed
@@ -669,6 +671,7 @@ images:
 | Rule | Severity | Deterministic Condition |
 |---|---|---|
 | `RECIPE_SCHEMA` | Error (Exit 1) | Document fails JSON Schema / Zod structural validation. |
+| `RECIPE_UID_FORMAT` | Error (Exit 1) | `uid` matches regex `^[0-9a-hjkmnp-tv-z]{6}$` (lowercase Crockford Base32) and is globally unique across the entire recipe corpus. |
 | `STEP_REF_INTEGRITY` | Error (Exit 1) | Every `ingredient.step` and `prep_task.before_step` resolves to an existing step in `steps`. |
 | `CONSUMES_DAG` | Error (Exit 1) | `step.consumes` contains only prior step IDs ($P < S$ in document order). No cycles, no forward references. |
 | `FOOD_REGISTRY_LINK` | Error (Exit 1) | In `reviewed` recipes, every non-component instance must link to a non-deprecated `food` ID in `data/foods.yaml`. |
@@ -695,6 +698,7 @@ Per ADR-0002, `mise run verify` must fail if any mutant passes or is missing fro
 8. `mutant-cyclic-component`: Recipe A references component B, which in turn references recipe A. Must fail `COMPONENT_DAG`.
 9. `mutant-deep-component`: Recipe A references component B, which references component C, which references component D (depth 3). Must fail `COMPONENT_DAG`.
 10. `mutant-unbridged-component`: Recipe A consumes component B in `g`, but component B yields `porce` and has no `yield.alternate`. Must fail `COMPONENT_BRIDGE`.
+11. `mutant-invalid-uid`: A recipe with an invalid Crockford Base32 `uid` (e.g. uppercase characters, containing forbidden letters `i`, `l`, `o`, `u`, or length != 6) or a duplicate `uid` already claimed by another recipe. Must fail `RECIPE_UID_FORMAT`.
 
 ---
 
