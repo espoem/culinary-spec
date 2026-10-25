@@ -1,0 +1,4 @@
+# Local working files: research output, scraped recipe sources, drafts.
+# Nothing here is documentation and nothing here is versioned.
+.scratch/
+tmp/
