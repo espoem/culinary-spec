@@ -327,7 +327,8 @@ license: CC-BY-SA-4.0
 source_url: https://example.com/classic-french-mornay
 source_title: Le Guide Culinaire - Sauce Mornay Fact Sheet
 retrieved_at: "2026-10-25T12:00:00Z"
-source_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+raw_scrape_sha256: 4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
+source_extract_sha256: a8b3d6c19f2e4b7a8d0c2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b
 
 source_extract:
   quantities:
@@ -360,9 +361,18 @@ source_extract:
     word_count: 145
 
 review:
-  reviewed_by: Martin Šmíd
-  reviewed_at: "2026-10-25T14:30:00Z"
-  notes: Verified proportions against reference; confirmed original bilingual prose methods.
+  cs:
+    reviewed_by: Martin Šmíd
+    reviewed_at: "2026-10-25T14:30:00Z"
+    recipe_content_sha256: 4a2b6c8d1e3f5a7b9c0d2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b
+    source_extract_sha256_at_review: a8b3d6c19f2e4b7a8d0c2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b
+    notes: Verified proportions against reference; confirmed original Czech prose methods.
+  en:
+    reviewed_by: Martin Šmíd
+    reviewed_at: "2026-10-25T14:45:00Z"
+    recipe_content_sha256: 7f8e9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f
+    source_extract_sha256_at_review: a8b3d6c19f2e4b7a8d0c2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b
+    notes: Verified proportions against reference; confirmed original English prose methods.
 
 images:
   - file: hero.webp
@@ -379,12 +389,13 @@ images:
    - `source_url`: Canonical URL of the source.
    - `source_title`: Title of the source recipe or book reference.
    - `retrieved_at`: ISO 8601 timestamp of retrieval.
-   - `source_sha256`: SHA-256 hash of the scraped source HTML or raw text fixture.
+   - `raw_scrape_sha256`: SHA-256 hash of the scraped source HTML or raw text fixture cached in `.scratch/scrapes/<id>/raw.html` (gitignored).
+   - `source_extract_sha256`: SHA-256 hash of the RFC 8785 canonicalized JSON representation of `source_extract` (`SHA256(JCS(source_extract))`).
    - `source_extract`: Structured digest of source facts:
-     - `quantities`: List of extracted ingredients `{ amount, unit, food, raw }`. Used for quantity-tuple Jaccard overlap tests.
+     - `quantities`: List of extracted ingredients `{ amount, unit, food, raw }`. Used for continuous tolerance-matched Jaccard overlap tests ($J_\tau$, ADR-0009).
      - `prose_fingerprint`: `{ simhash, shingle_hashes, word_count }`. Used to verify that prose has been completely re-authored and not plagiarized, without requiring copyrighted source HTML in the Git repository.
-4. **Deterministic Exit 2**: If an adapted recipe is missing `provenance.yaml` or missing `source_extract`, `mise run verify` exits with **code 2** (ADR-0002). This prevents CI from passing vacuously when scraping data is omitted.
-5. `review`: Mandatory when any language in `recipe.yaml` has `state: reviewed`. Must contain `reviewed_by` and `reviewed_at`.
+4. **Deterministic Exit 2**: If an adapted recipe is missing `provenance.yaml`, missing `source_extract_sha256`, or missing `source_extract`, `mise run verify` exits with **code 2** (ADR-0002). This prevents CI from passing vacuously when scraping data is omitted.
+5. `review.<lang>`: Mandatory per language when that language in `recipe.yaml` has `state: reviewed`. Must contain `reviewed_by`, `reviewed_at`, `recipe_content_sha256` (`SHA256(JCS(\Pi_{\text{lang}}(R)))`), and `source_extract_sha256_at_review` (ADR-0009).
 6. `images`: List of image assets. Each image specifies `file`, `origin` (`'original'`, `'generated'`, or `'licensed'`), `license`, optional `prompt`, and a 64-bit perceptual hash (`phash`) for regression assertions.
 
 ---
@@ -615,7 +626,8 @@ license: CC-BY-SA-4.0
 source_url: https://example.com/classic-french-mornay
 source_title: Le Guide Culinaire - Sauce Mornay Fact Sheet
 retrieved_at: "2026-10-25T12:00:00Z"
-source_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+raw_scrape_sha256: 4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
+source_extract_sha256: a8b3d6c19f2e4b7a8d0c2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b
 
 source_extract:
   quantities:
@@ -648,9 +660,18 @@ source_extract:
     word_count: 145
 
 review:
-  reviewed_by: Martin Šmíd
-  reviewed_at: "2026-10-25T14:30:00Z"
-  notes: Verified culinary proportions against Escoffier reference, validated Czech and English phrasing, verified step laminarity.
+  cs:
+    reviewed_by: Martin Šmíd
+    reviewed_at: "2026-10-25T14:30:00Z"
+    recipe_content_sha256: 4a2b6c8d1e3f5a7b9c0d2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b
+    source_extract_sha256_at_review: a8b3d6c19f2e4b7a8d0c2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b
+    notes: Verified culinary proportions against Escoffier reference, validated Czech phrasing, verified step laminarity.
+  en:
+    reviewed_by: Martin Šmíd
+    reviewed_at: "2026-10-25T14:45:00Z"
+    recipe_content_sha256: 7f8e9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f
+    source_extract_sha256_at_review: a8b3d6c19f2e4b7a8d0c2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b
+    notes: Verified culinary proportions against Escoffier reference, validated English phrasing, terminology matches culinary glossary.
 
 images:
   - file: hero.webp
@@ -681,7 +702,7 @@ images:
 | `ZERO_TOKEN_PROSE` | Error (Exit 1) | Step prose matches regex `\{[^\}]+\}` or contains raw unescaped ingredient amounts. |
 | `MATRIX_LAMINARITY` | Warning / Fallback | If row sets $\text{rows}(S)$ contain crossing spans, table layout automatically falls back to `phase-rail`. |
 | `EMPTY_STEP_ROWS` | Error (Exit 1) | Any step has $\text{rows}(S) = \emptyset$ (consumes neither ingredients nor prior steps). |
-| `PROVENANCE_FAIL_CLOSED` | Error (Exit 2) | Adapted recipe missing `provenance.yaml`, missing `source_sha256`, or missing `source_extract`. |
+| `PROVENANCE_FAIL_CLOSED` | Error (Exit 2) | Adapted recipe missing `provenance.yaml`, missing `source_extract_sha256`, or missing `source_extract`. |
 | `NUTRITION_SERVING_SIZE` | Error (Exit 1) | `nutrition.basis == 'per_serving'` and `yield.unit !== 'porce'`, but `serving_size` is missing. |
 
 ### 2. Required Mutants under `tests/corpus/mutants/`

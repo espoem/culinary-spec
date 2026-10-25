@@ -67,9 +67,9 @@ Runs locally on every commit via `hk` and in CI on every push. Requires only Nod
 3. **TypeScript Typecheck (`tsc --noEmit`)**: Validates complete type soundness across `src/` and `scripts/`.
 4. **Corpus & Schema Validation**: Validates all recipes in `recipes/` against JSON Schema / Zod definitions, verifies Crockford Base32 `uid` uniqueness and formatting, validates referential integrity of ingredient `step` and prep-task `before_step` IDs, verifies intermediate step consumption DAGs (`consumes`), checks component composition DAGs (acyclic, depth $\le 2$), validates component dimension bridges (`yield.alternate`), verifies variant matrix laminarity, and asserts structural language parity across non-draft locales (`structural_language_parity_holds_across_published_locales`).
 5. **Literal Arithmetic & Scaling Suite (`literal_scaling_and_unit_arithmetic`)**: Executes pure-function unit conversion, magnitude rounding, eighth-based spoon formatting, outward range scaling, and portion refusal assertions against in-test literal expectations.
-6. **Provenance Sidecar Verification**: Evaluates all adapted recipes in `recipes/`: verifies presence of `provenance.yaml`, `source_sha256`, and normalized source extract (fails closed with **Exit Code 2** if missing). Asserts Quantity-tuple Jaccard index $< 0.90$, 8-word shingle overlap $\le 0.05$, and 64-bit DCT perceptual hash (`phash`) Hamming distance $> 6$ for licensed images.
+6. **Provenance Sidecar Verification**: Evaluates all adapted recipes in `recipes/`: verifies presence of `provenance.yaml`, `source_extract_sha256`, and normalized source extract (fails closed with **Exit Code 2** if missing). Asserts Continuous Tolerance-Matched Bipartite Jaccard index $J_\tau < 0.90$, 8-word shingle overlap $\le 0.05$, and 64-bit DCT perceptual hash (`phash`) Hamming distance $> 6$ for licensed images.
 7. **Static Print-Readiness Checks**: Validates presence of `@page { size: A4 }` rules in print stylesheets, verifies `break-inside: avoid` on step and matrix rows, and asserts that QR code shortlink targets strictly match `/<lang>/(recepty|recipes)/<uid>/`.
-8. **Consolidated Mutant Runner**: Executes all 37 mutants in `tests/corpus/mutants/`, asserting 100% kill rate with exact expected rule codes and exit codes.
+8. **Consolidated Mutant Runner**: Executes all 44 mutants in `tests/corpus/mutants/`, asserting 100% kill rate with exact expected rule codes and exit codes.
 
 #### Tier 2: `mise run verify:slow` (Playwright Headless Chromium)
 Runs against production static build output in `dist/`. Requires headless Chromium via Playwright, but **zero Poppler or external OS utilities**:
@@ -112,10 +112,10 @@ The verification suite strictly adheres to three distinct exit codes:
 Upon successful execution of `mise run verify`, the runner must output a single, parseable evidence summary string:
 
 ```
-PASS verify (recipes: N, variants: M, mutants_killed: 37/37, arithmetic_assertions: A, oxlint_rules: 12, axe_rules_checked: 12 across 3 states, max_inp_ms: T)
+PASS verify (recipes: N, variants: M, mutants_killed: 44/44, arithmetic_assertions: A, oxlint_rules: 12, axe_rules_checked: 12 across 3 states, max_inp_ms: T)
 ```
 
-If any counter is zero (e.g. `recipes: 0` or `mutants_killed: 0/37`), the run is invalid and exits with code 2.
+If any counter is zero (e.g. `recipes: 0` or `mutants_killed: 0/44`), the run is invalid and exits with code 2.
 
 ---
 
@@ -198,9 +198,9 @@ The mutant runner in `verify:fast` iterates through every directory under `tests
 
 ---
 
-### 5. Consolidated 37-Mutant Matrix
+### 5. Consolidated 44-Mutant Matrix
 
-The complete, unified 37-row matrix spanning ADR-0004 through ADR-0008:
+The complete, unified 44-row matrix spanning ADR-0004 through ADR-0009:
 
 | # | Mutant ID | Governing ADR | Rule ID | Exit | Deterministic Trigger Condition | Tier |
 |---|---|---|---|---|---|---|
@@ -241,6 +241,13 @@ The complete, unified 37-row matrix spanning ADR-0004 through ADR-0008:
 | 35 | `mutant-localized-query-param` | ADR-0007 | `CANONICAL_PARAM_KEYS` | 1 | Stepper or cook mode emits localized query param key (`?porce=4`). | Slow |
 | 36 | `mutant-unreviewed-hreflang` | ADR-0007 | `HREFLANG_SEO_PARITY` | 1 | `hreflang` alternate tag links to a page whose publication state is `unverified`. | Slow |
 | 37 | `mutant-404-missing-uid` | ADR-0007 | `RESCUE_404_MAP` | 1 | Published recipe `uid` missing from `404.html` client rescue map lookup table. | Slow |
+| 38 | `mutant-corpus-duplicate-block` | ADR-0009 | `CORPUS_DUPLICATE_BLOCK` | 1 | Candidate recipe has tolerance-matched Jaccard $J_\tau \ge 0.90$ against existing corpus recipe. | Fast |
+| 39 | `mutant-corpus-unresolved-near-variant` | ADR-0009 | `CORPUS_UNRESOLVED_NEAR_VARIANT` | 1 | Recipe promoted to `reviewed` with $0.75 \le J_\tau < 0.90$ without `parent` or `not_duplicate_of` justification. | Fast |
+| 40 | `mutant-prose-plagiarism-detected` | ADR-0009 | `PROSE_PLAGIARISM_DETECTED` | 1 | Adapted recipe contains verbatim 8-word phrases from source extract exceeding $5\%$ shingle overlap. | Fast |
+| 41 | `mutant-image-duplicate-or-copied` | ADR-0009 | `IMAGE_DUPLICATE_OR_COPIED` | 1 | Recipe image has perceptual hash Hamming distance $\le 6$ against scrape image without licensing metadata. | Fast |
+| 42 | `mutant-review-stale-content-hash` | ADR-0009 | `REVIEW_STALE_CONTENT_HASH` | 1 | Step prose or shared ingredient amount modified in `reviewed` recipe without re-executing `mise run review`. | Fast |
+| 43 | `mutant-review-source-drift` | ADR-0009 | `REVIEW_SOURCE_DRIFT` | 1 | `source_extract_sha256` updated following upstream source drift, but `review[L]` still carries old extract hash. | Fast |
+| 44 | `mutant-component-state-inversion` | ADR-0009 | `COMPONENT_STATE_INVERSION` | 1 | Recipe in `reviewed` state references a component whose state in that language is `unverified` or `draft`. | Fast |
 
 ---
 
@@ -250,7 +257,7 @@ The complete, unified 37-row matrix spanning ADR-0004 through ADR-0008:
 - **Fail-Closed Legal and Quality Posture**: The repository cannot publish scraped recipes without legal provenance (Exit 2), cannot disable accessibility rules via hidden comments (Exit 2), and cannot pass vacuously when fixtures or mutants are missing (Exit 2).
 - **Zero OS Dependency for Site Launch (Phase 1)**: The core static website, interactive kitchen cook mode, bilingual navigation, search, and accessibility are 100% verified via `mise run verify` without requiring Poppler or native font installations.
 - **Dedicated Physical Print Gate (Phase 2)**: Physical A4 PDF print verification is isolated in `mise run verify:print`. When run in Phase 2, it guarantees exact ISO A4 MediaBox dimensions, embedded vector fonts, and split-free page breaks with complete determinism.
-- **Comprehensive Regression Barrier**: The 37-mutant matrix guarantees that every single structural constraint defined in ADR-0004 through ADR-0008 is verified against an active, executable failure test.
+- **Comprehensive Regression Barrier**: The 44-mutant matrix guarantees that every single structural constraint defined in ADR-0004 through ADR-0009 is verified against an active, executable failure test.
 
 ---
 
