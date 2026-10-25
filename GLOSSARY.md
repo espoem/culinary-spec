@@ -22,8 +22,7 @@ instances it consumes, and optionally a duration or target temperature.
 **Přípravná úloha** / *prep task* — work that must happen before or alongside the
 steps but is not tied to an ingredient (preheat, grease a pan, start rice).
 
-**Surovina** / *ingredient* — the abstract pantry item, language-neutral, with an
-identity used for the shopping list (`cibule` = `onion`).
+**Surovina** / *ingredient* — the abstract pantry item, language-neutral, with a canonical identity across recipes, components and languages (`cibule` = `onion`).
 
 **Instance suroviny** / *ingredient instance* — one line in one recipe: an
 ingredient, an amount, a unit, an optional preparation note, and the step it
@@ -68,8 +67,7 @@ retrieval date, and the digest of the source when one exists.
 **Stav publikace** / *publication state* — `draft`, `unverified` (live, not
 indexed, badged), `reviewed` (human-checked against its source, indexable).
 
-**Kolekce** / *collection* — a reader-assembled list of recipes for one bulk
-print or one shopping trip.
+**Kolekce** / *collection* — a reader-assembled list of recipes for bulk print or export.
 
 ## Names that must not be confused
 

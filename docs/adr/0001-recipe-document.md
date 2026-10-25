@@ -24,12 +24,12 @@ removes the single-prose advantage that motivates the syntax.
    plus written methods, one per language. Amounts, units and preparation notes
    are fields on ingredient instances, never substrings of prose.
 2. **No token language.** Prose stays prose. A graph is derived from the document
-   only where a feature needs it (shopping list, table layout), and never gates
+   only where a feature needs it (component totals, table layout), and never gates
    publication: a recipe that yields no graph publishes without a scaler, not as
    an error.
 3. **Composition.** A recipe may be assembled from components, depth ≤ 2, live
-   references without version pinning. Shopping aggregation sums by ingredient
-   identity and unit across the whole tree; fixed instances never scale.
+   references without version pinning. Component aggregation sums by ingredient
+   identity and dimension across the composition tree; fixed instances never scale.
 4. **Variants.** A variant changes ingredients or quantities of the same
    procedure. Different steps make a new recipe with a parent reference. A
    variant may be assembled from a different set of components and may have a
@@ -51,7 +51,7 @@ removes the single-prose advantage that motivates the syntax.
 
 ## Consequences
 
-- Scaling, shopping and the table layout all need explicit step-to-instance
+- Scaling, composition totals and the table layout all need explicit step-to-instance
   assignment; that assignment is authored, not inferred.
 - The JSON-LD `recipeIngredient` strings are rendered from fields, so they cannot
   drift from the displayed list.
