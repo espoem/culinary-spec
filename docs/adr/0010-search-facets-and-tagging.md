@@ -193,7 +193,7 @@ butter:
   animal_product: dairy
   default_dimension: mass
   allergens: [milk]
-  names: { cs: { one: máslo }, en: { one: butter, other: butter } }
+  names: { cs: máslo, en: { one: butter, other: butter } }
   aliases: { cs: [másla, máslem, máslu], en: [sweet cream butter] }
 
 lard:
@@ -202,21 +202,21 @@ lard:
   animal_product: meat
   default_dimension: mass
   allergens: []
-  names: { cs: { one: sádlo }, en: { one: lard, other: lard } }
+  names: { cs: sádlo, en: { one: lard, other: lard } }
 
 chanterelle:
   id: chanterelle
   origin: fungi
   default_dimension: mass
   allergens: []
-  names: { cs: { one: liška }, en: { one: chanterelle, other: chanterelles } }
+  names: { cs: liška obecná, en: { one: chanterelle, other: chanterelles } }
 
 salt:
   id: salt
   origin: mineral
   default_dimension: mass
   allergens: []
-  names: { cs: { one: sůl }, en: { one: salt, other: salt } }
+  names: { cs: sůl, en: { one: salt, other: salt } }
 ```
 
 ---
@@ -268,7 +268,7 @@ To avoid false negatives while preventing variant laundering:
 1. **Base Recipe Evaluation**: The base recipe matches `allergen_not` strictly on its own derived $\mathcal{A}_{\text{base}} = \text{allergens.mandatory}$.
 2. **Materialized Variant Qualification**: If the base recipe is excluded, the engine iterates over its materialized variants. A variant $V$ qualifies if and only if its materialized document satisfies:
    $$(\mathcal{A}_V^{\text{mandatory}} \cup \mathcal{A}_V^{\text{optional}}) \cap E = \emptyset$$
-   for the **entire** active excluded set $E$ simultaneously, where $\mathcal{A}_V^{\text{mandatory}}$ and $\mathcal{A}_V^{\text{optional}}$ are derived from the materialized variant document's effective ingredient instances ($\text{ingredients}(V)$ after applying `replace`, `add`, and `remove`, plus referenced components, and then applying $V.\text{allergens\_add}$ and $V.\text{allergens\_remove}$, matching ADR-0006 §6 & §7.1). This ensures that a clean `replace` variant (e.g. swapping wheat flour for gluten-free flour) automatically clears `gluten` from $\mathcal{A}_V$ via its replaced food instances, while any declared `allergens_remove` is validated against actual culinary modifications.
+   for the **entire** active excluded set $E$ simultaneously, where $\mathcal{A}_V^{\text{mandatory}}$, $\mathcal{A}_V^{\text{optional}}$, and $\mathcal{A}_V^{\text{detected}}$ are derived from the materialized variant document's effective ingredient instances ($\text{ingredients}(V)$ after applying `replace`, `add`, and `remove`, plus referenced components, and then applying $V.\text{allergens\_add}$ and $V.\text{allergens\_remove}$, matching ADR-0006 §6 & §7.1). A variant qualifies under `allergen_not` only when the excluded allergen was genuinely eliminated by an ingredient `replace` or `remove`—so that $E \cap \mathcal{A}_V^{\text{detected}} = \emptyset$ (or falls under the explicit lactose-free ghee exception)—making the non-removable allergen doctrine 100% explicit for variants as well (`SEARCH_VARIANT_LINK_INTEGRITY`). This ensures that a clean `replace` variant (e.g. swapping wheat flour for gluten-free flour) automatically clears `gluten` from $\mathcal{A}_V$ via its replaced food instances, while any declared `allergens_remove` is validated against actual culinary modifications.
 3. **Surfacing Variant Matches**:
    - The recipe card is tagged with a distinct badge: *"Dostupné v upravené variantě: <V.title> / Available in adapted variant: <V.title>"*.
    - The card hyperlink points directly to the canonical recipe URL with the variant parameter pre-selected: `/<lang>/<section>/<uid>-<slug>/?variant=<V.id>`.
@@ -384,12 +384,13 @@ Materializing full alias strings into every recipe entry creates massive payload
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["id", "title", "allergens_mandatory", "allergens_optional"],
+              "required": ["id", "title", "allergens_mandatory", "allergens_optional", "allergens_detected"],
               "properties": {
                 "id": { "type": "string" },
                 "title": { "type": "string" },
                 "allergens_mandatory": { "type": "array", "items": { "type": "string" } },
-                "allergens_optional": { "type": "array", "items": { "type": "string" } }
+                "allergens_optional": { "type": "array", "items": { "type": "string" } },
+                "allergens_detected": { "type": "array", "items": { "type": "string" } }
               }
             }
           },

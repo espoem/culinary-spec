@@ -88,8 +88,8 @@ deterministically, and never blocks drafting on unknown foods.
    ingredients or processing contaminants) or `allergens_remove` (for culinary elimination,
    with mandatory note). Crucially, to eliminate safety loopholes in diet claims (ADR-0006,
    ADR-0010), build verification additionally computes `allergens_detected` as the raw,
-   non-removable union of allergens across all linked ingredients and components prior to any
-   `allergens_remove`. Diet validation gates (such as `vegan`, `vegetarian`, `gluten-free`, or `dairy-free`)
+   non-removable union of allergens across all linked ingredients and components before any
+   `allergens_add` or `allergens_remove`. Diet validation gates (such as `vegan`, `vegetarian`, `gluten-free`, or `dairy-free`)
    evaluate `forbid_allergens` strictly against `allergens_detected`, `origins_detected`, and `animal_products_detected`. The single documented
    exception is `lactose-free`, which evaluates `forbid_mandatory_allergens` against `allergens.mandatory` +
    `allergens.optional`, permitting clarified butter/ghee where milk solids are removed with an explicit

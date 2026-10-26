@@ -215,7 +215,7 @@ All URL query parameter keys, query enum values, and step fragment identifiers a
 
 #### Cross-Lingual Search State Preservation (`?q=...`)
 While numeric and enum parameters forward cleanly across languages, free-text search `?q=...` could naively fail when switching from `/cs/hledani/?q=omáčka` to `/en/search/`. To ensure zero lost state on search routes:
-The search engine's static index (`search-index.<lang>.json`) stores deduplicated, pre-folded text tokens for **both** languages on every recipe entry (`folded.title`, `folded.summary`, `folded.tags`, `folded.search_aliases`, and food aliases from `data/foods.yaml`). Consequently, free-text queries like `?q=omacka` or `?q=mouka` match their counterparts losslessly when toggling `#lang-switch` between `/cs/hledani/` and `/en/search/`.
+The search engine's static index (`search-index.<lang>.json`) stores deduplicated, pre-folded text tokens for **both** languages on every recipe entry (`folded.title`, `folded.summary`, `folded.tags`, `folded.search_aliases`, `folded.variant_titles`, and food aliases from `data/foods.yaml`). Consequently, free-text queries like `?q=omacka` or `?q=mouka` match their counterparts losslessly when toggling `#lang-switch` between `/cs/hledani/` and `/en/search/`.
 
 #### Progressive Language Switch Handler
 Because query parameters and step IDs are identical across languages (guaranteed by ADR-0002 and ADR-0006 structural language parity), switching languages preserves the complete kitchen context.
