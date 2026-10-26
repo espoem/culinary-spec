@@ -192,6 +192,9 @@ steps:
     lane: active
     time_minutes: 2
     temp_c: 120
+    short:
+      cs: máslo + mouka, 2 min
+      en: butter + flour, 2 min
     prose:
       cs: V rendlíku rozpusťte máslo, přisypte mouku a míchejte do světlé jíšky.
       en: Melt butter in a saucepan, add flour, and whisk into a pale roux.
@@ -222,6 +225,7 @@ steps:
 - **Timing and Heat (mutually exclusive)**:
   - **Scalar**: `time_minutes?: number | [number, number]` and/or `temp_c?: number`.
   - **Multi-stage sequential timers**: `timers?: { duration_minutes: number | [number, number], temp_c?: number, label?: { cs?: string, en?: string } }[]`. Mutually exclusive with top-level `time_minutes`. Drives the cook-mode countdown engine.
+- **Short cue (`short`)**: Optional bilingual label `{ cs?: string, en?: string }`, at most 48 characters per language, empty or absent when the step is self-evident. Used by the matrix cells, recipe cards and any surface too small for full prose. It must be authored, never truncated from `prose`: a truncated sentence overflows the A4 sheet and reads as broken (measured in ticket #5). `STEP_SHORT_FORMAT` fails when a present value exceeds 48 characters or is empty; `STEP_SHORT_MISSING` warns when `table_layout` resolves to `matrix` and a step has no short cue.
 - **Zero-Token Prose**: `prose: { cs: string, en: string }`. Step prose must be 100% natural language prose. No `{...}` tokens, no `@ingredient` references, and no hardcoded numeric quantities. Consumed ingredient pills/chips are rendered by user interfaces and print layouts directly from the step bindings (`I.step == S.id`).
 
 #### Matrix Geometry & Laminarity Formula:
@@ -729,6 +733,8 @@ images:
 | `TIME_LEDGER_MISMATCH` | Warning | `timings.cook_minutes` is less than the sequential sum of active step `time_minutes` or `timers` durations. |
 | `LANGUAGE_PARITY` | Error (Exit 1) | For all languages not in `'draft'`, step count, step IDs, sequence, timings, temperatures, and instance step bindings are identical. |
 | `ZERO_TOKEN_PROSE` | Error (Exit 1) | Step prose matches regex `\{[^\}]+\}` or contains raw unescaped ingredient amounts. |
+| `STEP_SHORT_FORMAT` | Error (Exit 1) | A present `short` value is empty or exceeds 48 characters in its language. |
+| `STEP_SHORT_MISSING` | Warning | `table_layout` resolves to `matrix` and a step has no `short` cue for a published language. |
 | `MATRIX_LAMINARITY` | Error (Exit 1) / Warning | If explicit `table_layout: 'matrix'` and step intervals cross, fails with Exit 1. If `table_layout: 'auto'` (default) and step intervals cross, emits build warning and falls back cleanly to `phase-rail`. |
 | `EMPTY_STEP_ROWS` | Error (Exit 1) | Any step has $\text{rows}(S) = \emptyset$ (consumes neither ingredients nor prior steps). |
 | `PROVENANCE_FAIL_CLOSED` | Error (Exit 2) | Adapted recipe missing `provenance.yaml`, missing `source_extract_sha256`, or missing `source_extract`. |
