@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="cs" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Čtení a cook mode — prototyp</title>
+<style>
+  :root {
+    --bg: #faf8f4;
+    --surface: #ffffff;
+    --surface-2: #f2eee7;
+    --ink: #1b1712;
+    --ink-2: #5d5449;
+    --ink-3: #726a60;
+    --line: #e2dbd1;
+    --accent: #7a4f2a;
+    --accent-ink: #ffffff;
+    --accent-soft: #f0e3d6;
+    --oven: #9e4d37;
+    --oven-soft: #f6e2dc;
+    --ok: #2f6b46;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(20, 15, 10, .12);
+  }
+
+  [data-theme="dark"] {
+    --bg: #14110e;
+    --surface: #1d1915;
+    --surface-2: #262019;
+    --ink: #f3ece2;
+    --ink-2: #c3b8a9;
+    --ink-3: #958a7c;
+    --line: #332c24;
+    --accent: #e0a06a;
+    --accent-ink: #1b1712;
+    --accent-soft: #33261b;
+    --oven: #e07a5f;
+    --oven-soft: #3a241d;
+    --ok: #7bbd94;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .5);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #2b2620;
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- chrome (not part of the product) ---------- */
+  .chrome {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; flex-wrap: wrap; gap: .4rem .8rem; align-items: center;
+    padding: .55rem .8rem; background: #17130f; color: #efe7dc;
+    font-size: .78rem;
+  }
+  .chrome .label { color: #8d8274; font-size: .62rem; letter-spacing: .1em; text-transform: uppercase; }
+  .chrome .seg { display: flex; gap: 2px; background: #241e18; border-radius: 999px; padding: 2px; }
+  .chrome button {
+    font: inherit; color: inherit; background: transparent; border: 0; border-radius: 999px;
+    padding: .25rem .6rem; cursor: pointer;
+  }
+  .chrome button[aria-pressed="true"] { background: #efe7dc; color: #17130f; }
+  .chrome button:focus-visible { outline: 2px solid #e0a06a; outline-offset: 1px; }
+
+  .stage { display: flex; justify-content: center; padding: 18px 10px 40px; }
+
+  /* ---------- device frames ---------- */
+  .device {
+    width: 390px; height: 780px; background: var(--bg); border-radius: 32px;
+    box-shadow: var(--shadow); overflow: hidden; position: relative; display: flex; flex-direction: column;
+  }
+  .device[data-device="tablet"] { width: 834px; height: 640px; border-radius: 20px; }
+  .device[data-device="tablet"] .screen { padding: 18px 20px; }
+
+  .statusbar {
+    display: flex; justify-content: space-between; padding: 10px 22px 2px;
+    font-size: .62rem; color: var(--ink-3); letter-spacing: .04em;
+  }
+  .screen { flex: 1 1 auto; overflow-y: auto; padding: 6px 16px 20px; scrollbar-width: thin; }
+
+  /* ---------- recipe header ---------- */
+  .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .back { border: 0; background: none; color: var(--ink-3); font-size: 1.1rem; padding: 4px 6px; cursor: pointer; }
+  h1 { font-size: 1.32rem; line-height: 1.15; margin: 2px 0 4px; letter-spacing: -.01em; text-wrap: balance; }
+  .meta { color: var(--ink-2); font-size: .78rem; }
+  .meta b { font-weight: 600; }
+
+  .yieldbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin: 14px 0 6px; padding: 10px 12px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius);
+  }
+  .yieldbar .k { font-size: .72rem; color: var(--ink-3); text-transform: uppercase; letter-spacing: .08em; }
+  .stepper { display: flex; align-items: center; gap: 12px; }
+  .stepper button {
+    width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--ink); font-size: 1.1rem; cursor: pointer;
+  }
+  .stepper output { min-width: 3.2rem; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .toggle { display: flex; gap: 2px; background: var(--surface-2); border-radius: 10px; padding: 3px; }
+  .toggle button { border: 0; background: none; color: var(--ink-2); padding: 8px 10px; border-radius: 8px; font: inherit; font-size: .74rem; cursor: pointer; min-height: 44px; }
+  .toggle button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+  /* ---------- ingredient block ---------- */
+  .block { margin-top: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .block > summary {
+    list-style: none; cursor: pointer; padding: 12px 14px; display: flex; justify-content: space-between;
+    align-items: center; font-size: .8rem; font-weight: 600; letter-spacing: .02em;
+  }
+  .block > summary::-webkit-details-marker { display: none; }
+  .block > summary .count { color: var(--ink-3); font-weight: 400; font-variant-numeric: tabular-nums; }
+  ul.ing { list-style: none; margin: 0; padding: 0 14px 10px; }
+  ul.ing li { display: flex; gap: 8px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); font-size: .86rem; }
+  ul.ing li:first-child { border-top: 0; }
+  .qty { font-variant-numeric: tabular-nums; min-width: 5.2rem; font-weight: 600; }
+  .note { color: var(--ink-3); font-size: .78rem; }
+
+  /* ---------- reading view: steps ---------- */
+  .steps { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .stepcard {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 12px 14px; display: grid; grid-template-columns: 24px 1fr; gap: 10px;
+  }
+  .n { font-size: .72rem; color: var(--ink-3); font-variant-numeric: tabular-nums; padding-top: 3px; }
+  .stepcard p { margin: 0; font-size: .9rem; line-height: 1.45; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+  .chip { font-size: .7rem; background: var(--accent-soft); color: var(--accent); padding: 3px 7px; border-radius: 999px; }
+
+  /* ---------- cook mode ---------- */
+  .cook { display: flex; flex-direction: column; height: 100%; }
+  .progress { height: 4px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin: 6px 0 14px; }
+  .progress > i { display: block; height: 100%; background: var(--accent); }
+  .cookstep { flex: 1 1 auto; }
+  .cookstep .kicker { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .cookstep h2 { font-size: 1.55rem; line-height: 1.15; margin: 6px 0 10px; letter-spacing: -.015em; }
+  .cookstep p.body { font-size: 1.06rem; line-height: 1.55; margin: 0 0 14px; }
+  .timer {
+    display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--line); font-variant-numeric: tabular-nums;
+  }
+  .timer .t { font-size: 1.15rem; font-weight: 600; }
+  .timer button { border: 0; background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 10px 14px; font: inherit; font-size: .8rem; cursor: pointer; min-height: 44px; }
+  .free { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--oven-soft); color: var(--oven); font-size: .82rem; }
+  .actions { display: flex; gap: 8px; margin-top: 14px; }
+  .actions button {
+    flex: 1 1 auto; min-height: 52px; border-radius: 14px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); font: inherit; font-size: .9rem; cursor: pointer;
+  }
+  .actions .primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  .actions button[disabled] { opacity: .45; cursor: not-allowed; }
+
+  /* ---------- timeline ---------- */
+  .lanes { margin-top: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+  .lane { display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .lane .who { font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+  .track { position: relative; height: 34px; background: var(--surface-2); border-radius: 8px; }
+  .bar {
+    position: absolute; top: 4px; bottom: 4px; border-radius: 6px;
+    background: var(--accent-soft); color: var(--accent); font-size: .66rem; padding: 3px 6px; overflow: hidden;
+    display: flex; align-items: center; white-space: nowrap;
+  }
+  .lane[data-lane="oven"] .bar { background: var(--oven-soft); color: var(--oven); }
+  .axis { display: flex; justify-content: space-between; font-size: .62rem; color: var(--ink-3); margin-top: 2px; padding-left: 52px; font-variant-numeric: tabular-nums; }
+
+  /* tablet: two panes */
+  .device[data-device="tablet"] .screen { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }
+  .device[data-device="tablet"] .pane-left { position: sticky; top: 0; }
+  .device[data-device="tablet"] .pane-right { min-width: 0; }
+
+  .toast {
+    position: absolute; left: 50%; bottom: 18px; transform: translate(-50%, 0);
+    background: var(--ink); color: var(--bg); font-size: .76rem; padding: 8px 12px; border-radius: 999px;
+    opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  .toast[data-show="true"] { opacity: .95; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="chrome">
+  <span class="label">Device</span>
+  <div class="seg">
+    <button data-device="phone" aria-pressed="true">Phone</button>
+    <button data-device="tablet" aria-pressed="false">Tablet</button>
+  </div>
+  <span class="label">Mode</span>
+  <div class="seg">
+    <button data-mode="read" aria-pressed="true">Čtení</button>
+    <button data-mode="cook" aria-pressed="false">Cook</button>
+    <button data-mode="timeline" aria-pressed="false">Dráhy</button>
+  </div>
+  <span class="label">Theme</span>
+  <div class="seg">
+    <button data-theme="light" aria-pressed="true">Světlý</button>
+    <button data-theme="dark" aria-pressed="false">Tmavý</button>
+  </div>
+  <span class="label">Recipe</span>
+  <div class="seg">
+    <button data-recipe="mornay-sauce" aria-pressed="true">Mornay</button>
+    <button data-recipe="svickova" aria-pressed="false">Svíčková</button>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="device" data-device="phone">
+    <div class="statusbar"><span>9:41</span><span>100 %</span></div>
+    <div class="screen" id="screen"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ---------- compact units module (ADR-0004) ---------- */
+const UNITS = {
+  g:      { cs: { one: "gram", few: "gramy", many: "gramu", other: "gramů" }, en: { one: "gram", other: "grams" } },
+  ml:     { cs: { one: "mililitr", few: "mililitry", many: "mililitru", other: "mililitrů" }, en: { one: "millilitre", other: "millilitres" } },
+  lzice:  { eighth: true, cs: { one: "lžíce", few: "lžíce", many: "lžíce", other: "lžic" }, en: { one: "tbsp", other: "tbsp" } },
+  lzicka: { eighth: true, cs: { one: "lžička", few: "lžičky", many: "lžičky", other: "lžiček" }, en: { one: "tsp", other: "tsp" } },
+  spetka: { cs: { one: "špetka", few: "špetky", many: "špetky", other: "špetek" }, en: { one: "pinch", other: "pinches" } },
+  piece:  { count: true }
+};
+const FOODS = {
+  butter: { cs: { one: "máslo" } }, "flour-all-purpose": { cs: { one: "hladká mouka" } },
+  "milk-whole": { cs: { one: "plnotučné mléko" } }, "cheese-gruyere": { cs: { one: "sýr Gruyère" } },
+  nutmeg: { cs: { one: "muškátový oříšek" } }, salt: { cs: { one: "sůl" } },
+  egg: { cs: { one: "žloutek", few: "žloutky", many: "žloutku", other: "žloutků" } },
+  beef: { cs: { one: "hovězí kýta" } }, lard: { cs: { one: "sádlo" } },
+  onion: { cs: { one: "cibule", few: "cibule", many: "cibule", other: "cibulí" } },
+  carrot: { cs: { one: "mrkev", few: "mrkve", many: "mrkve", other: "mrkví" } },
+  celeriac: { cs: { one: "celer" } },
+  allspice: { cs: { one: "nové koření", few: "nová koření", many: "nového koření", other: "nového koření" } },
+  bay: { cs: { one: "bobkový list", few: "bobkové listy", many: "bobkového listu", other: "bobkových listů" } },
+  cream: { cs: { one: "smetana 33 %" } }, sugar: { cs: { one: "cukr" } },
+  vinegar: { cs: { one: "ocet", few: "octy", many: "octa", other: "octa" } },
+  dumplings: { cs: { one: "houskový knedlík", few: "houskové knedlíky", many: "houskového knedlíku", other: "houskových knedlíků" } },
+  cranberries: { cs: { one: "brusinky" } }
+};
+const NF = new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 2 });
+const EIGHTHS = ["", "⅛", "¼", "⅜", "½", "⅝", "¾", "⅞"];
+const NBSP = "\u00A0";
+
+const slot = (n) => { const c = new Intl.PluralRules("cs").select(n); return ["one", "few", "many"].includes(c) ? c : "other"; };
+function round(unit, n) {
+  const u = UNITS[unit];
+  if (u && u.eighth) return Math.max(0.125, Math.round(n * 8) / 8);
+  if (u && u.count) return Math.max(1, Math.round(n));
+  const a = Math.abs(n);
+  const q = a < 10 ? 0.5 : a < 50 ? 1 : a < 200 ? 5 : a < 1000 ? 10 : 25;
+  return Math.max(q, Math.round(n / q) * q);
+}
+function num(unit, n) {
+  if (UNITS[unit] && UNITS[unit].eighth) {
+    const whole = Math.floor(n + 1e-9), e = Math.round((n - whole) * 8);
+    if (e === 8) return String(whole + 1);
+    if (e === 0) return String(whole);
+    return (whole ? whole + " " : "") + EIGHTHS[e];
+  }
+  return NF.format(n);
+}
+function leadRest(inst) {
+  const n = round(inst.unit, inst.scaled);
+  if (UNITS[inst.unit] && UNITS[inst.unit].count) {
+    const f = FOODS[inst.food].cs, s = slot(n);
+    return { lead: num(inst.unit, n), rest: f[s] || f.other || f.one };
+  }
+  return { lead: num(inst.unit, n) + NBSP + (UNITS[inst.unit].cs[slot(n)] || UNITS[inst.unit].cs.other), rest: FOODS[inst.food].cs.one };
+}
+
+/* ---------- recipes ---------- */
+const RECIPES = [
+  {
+    id: "mornay-sauce", title: "Omáčka Mornay", meta: "10 min příprava · 15 min vaření · střední",
+    yieldBase: 4,
+    ingredients: [
+      { id: "butter", food: "butter", amount: 30, unit: "g", step: "roux" },
+      { id: "flour", food: "flour-all-purpose", amount: 30, unit: "g", step: "roux" },
+      { id: "milk", food: "milk-whole", amount: 500, unit: "ml", step: "bechamel", note: "zahřáté na 60 °C" },
+      { id: "yolk", food: "egg", amount: 1, unit: "piece", step: "enrich", note: "pouze žloutek" },
+      { id: "gruyere", food: "cheese-gruyere", amount: 100, unit: "g", step: "finish", note: "jemně nastrouhaný" },
+      { id: "nutmeg", food: "nutmeg", amount: 1, unit: "spetka", step: "finish", optional: true },
+      { id: "salt", food: "salt", amount: 2, unit: "g", step: "finish" }
+    ],
+    steps: [
+      { id: "roux", label: "Jíška", lane: "active", minutes: 2, text: "Máslo rozpusťte v těžkém kastrolu na středně nízkém ohni. Přisypte mouku a míchejte metličkou dvě minuty, dokud jíška nezapění a nezíská světle blond barvu." },
+      { id: "bechamel", label: "Bešamel", lane: "active", minutes: 5, text: "Za stálého šlehání vlijte teplé mléko po částech do jíšky, aby nevznikly hrudky. Přiveďte k jemnému varu a vařte pět minut, dokud omáčka nezhoustne na šlem." },
+      { id: "enrich", label: "Žloutek", lane: "active", minutes: 1, text: "Kastrol odstavte z ohně. Žloutek rozšlehejte s trochou horké omáčky a vraťte ho do kastrolu; již nevařte." },
+      { id: "finish", label: "Sýr a koření", lane: "active", minutes: 2, text: "Vmíchejte nastrouhaný sýr po dvou dávkách, aby se emulze nerozpadla. Dochuťte čerstvě strouhaným muškátem a solí a podávejte ihned." }
+    ]
+  },
+  {
+    id: "svickova", title: "Svíčková na smetaně", meta: "20 min příprava · 110 min vaření · střední",
+    yieldBase: 4,
+    ingredients: [
+      { id: "beef", food: "beef", amount: 800, unit: "g", step: "sear" },
+      { id: "lard", food: "lard", amount: 2, unit: "lzice", step: "sear" },
+      { id: "onion", food: "onion", amount: 1, unit: "piece", step: "aromatics" },
+      { id: "carrot", food: "carrot", amount: 2, unit: "piece", step: "aromatics" },
+      { id: "celeriac", food: "celeriac", amount: 100, unit: "g", step: "aromatics" },
+      { id: "allspice", food: "allspice", amount: 4, unit: "piece", step: "aromatics" },
+      { id: "bay", food: "bay", amount: 2, unit: "piece", step: "aromatics" },
+      { id: "flour", food: "flour-all-purpose", amount: 2, unit: "lzice", step: "thicken" },
+      { id: "cream", food: "cream", amount: 200, unit: "ml", step: "thicken" },
+      { id: "sugar", food: "sugar", amount: 1, unit: "lzicka", step: "season" },
+      { id: "vinegar", food: "vinegar", amount: 1, unit: "lzice", step: "season" },
+      { id: "dumplings", food: "dumplings", amount: 8, unit: "piece", step: "serve" },
+      { id: "cranberries", food: "cranberries", amount: 2, unit: "lzice", step: "serve" }
+    ],
+    steps: [
+      { id: "sear", label: "Opečení", lane: "active", minutes: 8, text: "Maso osolte, opepřete a zprudka opečte ze všech stran na sádle dohněda. Potřebujete barvu, ne propečení." },
+      { id: "aromatics", label: "Zelenina a koření", lane: "active", minutes: 10, text: "Přidejte nadrobno nakrájenou cibuli, mrkev a celer, celé nové koření a bobkový list. Podlijte vodou tak, aby maso bylo do poloviny ponořené." },
+      { id: "braise", label: "Duštění", lane: "oven", minutes: 90, text: "Přiklopte a duste v troubě při 170 °C doměkka. Maso musí jít krájet lžící." },
+      { id: "strain", label: "Přecedění", lane: "active", minutes: 5, text: "Maso vyjměte a udržujte teplé. Šťávu přeceďte, zeleninu rozmixujte dohladka a vše spojte." },
+      { id: "thicken", label: "Zahuštění", lane: "active", minutes: 5, text: "Zaprašte moukou, přidejte smetanu a povařte pět minut, dokud omáčka nezhoustne. Průběžně míchejte." },
+      { id: "season", label: "Dochucení", lane: "active", minutes: 2, text: "Dochuťte cukrem a octem po troškách, dokud není omáčka sladkokyselá. Dosolte až nakonec." },
+      { id: "serve", label: "Podání", lane: "active", minutes: 3, text: "Krájejte maso proti vláknu, přelijte omáčkou a podávejte s nakrájeným knedlíkem a brusinkami." }
+    ]
+  }
+];
+
+/* ---------- state ---------- */
+const state = { device: "phone", mode: "read", theme: "light", recipe: "mornay-sauce", servings: 4, step: 0 };
+function initFromQuery() {
+  const q = new URLSearchParams(location.search);
+  ["device", "mode", "theme", "recipe"].forEach((k) => { if (q.get(k)) state[k] = q.get(k); });
+  if (q.get("servings")) state.servings = Number(q.get("servings"));
+  if (q.get("step")) state.step = Math.max(0, Number(q.get("step")) - 1);
+}
+initFromQuery();
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function scaled(recipe) {
+  const factor = state.servings / recipe.yieldBase;
+  return recipe.ingredients.map((i) => Object.assign({}, i, { scaled: i.amount * factor }));
+}
+
+/* ---------- views ---------- */
+function ingList(recipe) {
+  const items = scaled(recipe);
+  return `<details class="block" ${state.mode === "read" ? "" : "open"}>
+    <summary><span>Suroviny</span><span class="count">${items.length} · ${state.servings} porce</span></summary>
+    <ul class="ing">${items.map((i) => {
+      const { lead, rest } = leadRest(i);
+      return `<li><span class="qty">${esc(lead)}</span><span>${esc(rest)}${i.note ? ` <span class="note">(${esc(i.note)})</span>` : ""}${i.optional ? ` <span class="note">· volitelné</span>` : ""}</span></li>`;
+    }).join("")}</ul>
+  </details>`;
+}
+
+function readView(recipe) {
+  const chips = (step) => recipe.ingredients.filter((i) => i.step === step.id).map((i) => {
+    const { lead, rest } = leadRest(Object.assign({}, i, { scaled: i.amount * (state.servings / recipe.yieldBase) }));
+    return `<span class="chip">${esc(lead)} ${esc(rest)}</span>`;
+  }).join("");
+  return `${ingList(recipe)}
+    <div class="steps">${recipe.steps.map((s, idx) => `
+      <article class="stepcard">
+        <div class="n">${idx + 1}</div>
+        <div>
+          ${chips(s) ? `<div class="chips">${chips(s)}</div>` : ""}
+          <p>${esc(s.text)}</p>
+        </div>
+      </article>`).join("")}
+    </div>`;
+}
+
+function cookView(recipe) {
+  const step = recipe.steps[state.step];
+  const chips = recipe.ingredients.filter((i) => i.step === step.id).map((i) => {
+    const { lead, rest } = leadRest(Object.assign({}, i, { scaled: i.amount * (state.servings / recipe.yieldBase) }));
+    return `<span class="chip">${esc(lead)} ${esc(rest)}</span>`;
+  }).join("");
+  const next = recipe.steps[state.step + 1];
+  const pct = Math.round(((state.step + 1) / recipe.steps.length) * 100);
+  return `<div class="cook">
+    <div class="progress" role="progressbar" aria-valuemin="1" aria-valuemax="${recipe.steps.length}" aria-valuenow="${state.step + 1}" aria-label="Krok"><i style="width:${pct}%"></i></div>
+    <div class="cookstep">
+      <div class="kicker">Krok ${state.step + 1} z ${recipe.steps.length} · ${esc(step.label)}</div>
+      <h2>${esc(step.label)}</h2>
+      ${chips ? `<div class="chips">${chips}</div>` : ""}
+      <p class="body">${esc(step.text)}</p>
+      <div class="timer">
+        <span class="t" data-timer>${String(step.minutes).padStart(2, "0")}:00</span>
+        <button data-start aria-label="Spustit časovač">Start</button>
+      </div>
+      ${step.lane === "oven" ? `<div class="free">Trouba pracuje za tebe — ${step.minutes} min. Můžeš uklidit nebo připravit další krok.</div>` : ""}
+      ${next && next.lane === "oven" ? `<div class="free">Další krok je pasivní: ${next.minutes} min v troubě.</div>` : ""}
+    </div>
+    <div class="actions">
+      <button data-prev ${state.step === 0 ? "disabled" : ""}>Zpět</button>
+      <button class="primary" data-next ${state.step === recipe.steps.length - 1 ? "disabled" : ""}>${state.step === recipe.steps.length - 1 ? "Hotovo" : "Další krok"}</button>
+    </div>
+  </div>`;
+}
+
+function timelineView(recipe) {
+  const total = recipe.steps.reduce((a, s) => a + s.minutes, 0);
+  let t = 0;
+  const bars = { active: [], oven: [] };
+  recipe.steps.forEach((s) => {
+    const start = (t / total) * 100;
+    const width = Math.max((s.minutes / total) * 100, 6);
+    bars[s.lane].push(`<div class="bar" style="left:${start}%;width:${width}%" title="${esc(s.label)} — ${s.minutes} min">${esc(s.label)}</div>`);
+    t += s.minutes;
+  });
+  const mm = (n) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+  return `${ingList(recipe)}
+    <div class="lanes">
+      <div class="lane" data-lane="active"><span class="who">Ty</span><div class="track">${bars.active.join("")}</div></div>
+      <div class="lane" data-lane="oven"><span class="who">Trouba</span><div class="track">${bars.oven.join("")}</div></div>
+      <div class="axis"><span>0:00</span><span>${mm(Math.round(total / 2))}</span><span>${mm(total)}</span></div>
+    </div>
+    <p class="meta" style="margin-top:10px">Celkem ${total} min práce a čekání. ${bars.oven.length ? "Pasivní čas běží v troubě, ty jsi volný." : "Všechno je aktivní čas u plotny."}</p>`;
+}
+
+/* ---------- render ---------- */
+let timerHandle = null;
+let remaining = 0;
+
+function render() {
+  const recipe = RECIPES.find((r) => r.id === state.recipe) || RECIPES[0];
+  const device = document.querySelector(".device");
+  device.dataset.device = state.device;
+  document.documentElement.dataset.theme = state.theme;
+
+  const head = `
+    <div class="head">
+      <div>
+        <h1>${esc(recipe.title)}</h1>
+        <p class="meta">${esc(recipe.meta)}</p>
+      </div>
+    </div>
+    <div class="yieldbar">
+      <div>
+        <div class="k">Porce</div>
+        <div class="stepper">
+          <button data-servings="-1" aria-label="Méně porcí">−</button>
+          <output aria-live="polite">${state.servings}</output>
+          <button data-servings="1" aria-label="Více porcí">＋</button>
+        </div>
+      </div>
+      <div class="toggle" role="group" aria-label="Zobrazení">
+        <button data-mode="read" aria-pressed="${state.mode === "read"}">Čtení</button>
+        <button data-mode="cook" aria-pressed="${state.mode === "cook"}">Cook</button>
+        <button data-mode="timeline" aria-pressed="${state.mode === "timeline"}">Dráhy</button>
+      </div>
+    </div>`;
+
+  const body = state.mode === "cook" ? cookView(recipe) : state.mode === "timeline" ? timelineView(recipe) : readView(recipe);
+
+  const screen = document.getElementById("screen");
+  screen.innerHTML = state.device === "tablet"
+    ? `<div class="pane-left">${head}${ingList(recipe)}</div><div class="pane-right">${state.mode === "read" ? readView(recipe) : state.mode === "cook" ? cookView(recipe) : timelineView(recipe)}</div>`
+    : `${head}${body}`;
+
+  if (state.device === "tablet" && state.mode !== "read") {
+    // avoid a duplicated ingredient block on tablet when the pane already shows it
+    screen.querySelectorAll(".pane-right details.block").forEach((el) => el.remove());
+  }
+
+  clearInterval(timerHandle);
+  timerHandle = null;
+  if (state.mode === "cook") {
+    const step = recipe.steps[state.step];
+    remaining = step.minutes * 60;
+    paintTimer();
+    const start = screen.querySelector("[data-start]");
+    if (start) start.addEventListener("click", toggleTimer);
+  }
+}
+
+function paintTimer() {
+  const el = document.querySelector("[data-timer]");
+  if (!el) return;
+  const m = Math.floor(remaining / 60), s = remaining % 60;
+  el.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function toggleTimer(e) {
+  if (timerHandle) {
+    clearInterval(timerHandle);
+    timerHandle = null;
+    e.currentTarget.textContent = "Start";
+    return;
+  }
+  e.currentTarget.textContent = "Pauza";
+  timerHandle = setInterval(() => {
+    remaining = Math.max(0, remaining - 1);
+    paintTimer();
+    if (remaining === 0) { clearInterval(timerHandle); timerHandle = null; }
+  }, 1000);
+}
+
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.dataset.show = "true";
+  setTimeout(() => { el.dataset.show = "false"; }, 1400);
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+
+  if (btn.dataset.servings) {
+    state.servings = Math.max(1, state.servings + Number(btn.dataset.servings));
+    render();
+    toast(`Množství přepočítáno na ${state.servings} porce`);
+    return;
+  }
+  if (btn.dataset.next && state.mode === "cook") { state.step = Math.min(state.step + 1, 99); render(); return; }
+  if (btn.dataset.prev && state.mode === "cook") { state.step = Math.max(state.step - 1, 0); render(); return; }
+
+  const key = ["device", "mode", "theme", "recipe"].find((k) => btn.dataset[k]);
+  if (!key) return;
+  state[key] = btn.dataset[key];
+  if (key === "recipe") state.step = 0;
+  if (key === "mode" && btn.dataset.mode === "cook") state.step = 0;
+  document.querySelectorAll(`.chrome [data-${key}], .toggle [data-${key}]`).forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset[key] === state[key])));
+  render();
+});
+
+/* keep the chrome pressed-state in sync with query-driven defaults */
+(function sync() {
+  ["device", "mode", "theme", "recipe"].forEach((k) => {
+    document.querySelectorAll(`[data-${k}]`).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset[k] === state[k])));
+  });
+})();
+
+render();
+</script>
+</body>
+</html>
