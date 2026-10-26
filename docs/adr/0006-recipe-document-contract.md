@@ -64,6 +64,7 @@ The root of `recipes/<id>/recipe.yaml` contains identity, categorization, and bi
 | `slug_aliases` | `{ cs?: string[], en?: string[] }` | Optional. Prior slugs that emit static 301 redirect pages during build. |
 | `summary` | `{ cs?: string, en?: string }` | 1–2 sentence summary. Feeds recipe cards and JSON-LD `description`. |
 | `published_at` | `string (YYYY-MM-DD)` | Initial publication date. Mandatory when any language has state `'reviewed'`. |
+| `updated_at` | `string (YYYY-MM-DD)` | Optional last substantive edit. Feeds `sitemap.xml` `lastmod` (ADR-0012) and falls back to `published_at` when absent. |
 | `parent` | `string` | Optional recipe `id`. Used when this recipe is a structural fork with altered steps. |
 | `category` | `string` | Controlled vocabulary for `schema.org/recipeCategory`. Must resolve to `data/taxonomy.yaml#categories` (`TAXONOMY_CATEGORY_UNKNOWN`). |
 | `cuisine` | `string` | Optional controlled vocabulary for `schema.org/recipeCuisine`. Must resolve to `data/taxonomy.yaml#cuisines` (`TAXONOMY_CUISINE_UNKNOWN`). |
