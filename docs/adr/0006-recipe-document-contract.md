@@ -65,11 +65,13 @@ The root of `recipes/<id>/recipe.yaml` contains identity, categorization, and bi
 | `summary` | `{ cs?: string, en?: string }` | 1–2 sentence summary. Feeds recipe cards and JSON-LD `description`. |
 | `published_at` | `string (YYYY-MM-DD)` | Initial publication date. Mandatory when any language has state `'reviewed'`. |
 | `parent` | `string` | Optional recipe `id`. Used when this recipe is a structural fork with altered steps. |
-| `category` | `string` | Controlled vocabulary for `schema.org/recipeCategory` (e.g. `sauce`, `main`, `soup`, `dessert`, `baking`, `appetizer`, `salad`). |
-| `cuisine` | `string` | Optional controlled vocabulary for `schema.org/recipeCuisine` (e.g. `french`, `czech`, `italian`). |
+| `category` | `string` | Controlled vocabulary for `schema.org/recipeCategory`. Must resolve to `data/taxonomy.yaml#categories` (`TAXONOMY_CATEGORY_UNKNOWN`). |
+| `cuisine` | `string` | Optional controlled vocabulary for `schema.org/recipeCuisine`. Must resolve to `data/taxonomy.yaml#cuisines` (`TAXONOMY_CUISINE_UNKNOWN`). |
 | `difficulty` | `'easy' \| 'medium' \| 'hard'` | Subjective kitchen difficulty rating. |
-| `tags` | `string[]` | Array of controlled kebab-case tag IDs. |
-| `table_layout` | `'auto' \| 'phase-rail'` | Optional layout override. Defaults to `'auto'`. If `'phase-rail'`, forces phase rail layout even if matrix is laminar. |
+| `tags` | `string[]` | Array of controlled kebab-case tag IDs. Must resolve to `data/taxonomy.yaml#tags` (`TAXONOMY_TAG_UNKNOWN`). Enforce no duplicate IDs (`TAG_DUPLICATE_INSTANCE`) and capped at $\le 8$ tags per recipe for card layout density and chip visual budget (`TAXONOMY_TAG_LIMIT_EXCEEDED`). |
+| `diets` | `string[]` | Optional array of controlled diet IDs. Must resolve to `data/taxonomy.yaml#diets` (`TAXONOMY_DIET_UNKNOWN`). Enforce no duplicate IDs (`TAG_DUPLICATE_INSTANCE`). |
+| `search_aliases` | `{ cs?: string[], en?: string[] }` | Optional bilingual inflected title synonyms and colloquial search terms used for build-time search indexing (ADR-0010). |
+| `table_layout` | `'auto' \| 'matrix' \| 'phase-rail'` | Optional layout override. Defaults to `'auto'`. If `'phase-rail'`, forces phase rail layout even if matrix is laminar. If `'matrix'`, explicitly requires matrix layout and fails verification with `MATRIX_LAMINARITY` (Exit 1) if step intervals cross. |
 
 #### Publication State Rules:
 - If a language key is omitted or set to `'draft'`, that recipe is completely excluded from the public static build of that language (ADR-0001).
@@ -105,7 +107,8 @@ timings:
 - `timings.prep_minutes`: Non-negative integer. Active prep time before heat.
 - `timings.cook_minutes`: Non-negative integer. Active or monitored cooking time.
 - `timings.rest_minutes`: Optional non-negative integer. Passive resting, cooling, or proofing time.
-- **Total time is never stored**: JSON-LD `totalTime` and card badges compute `prep_minutes + cook_minutes + (rest_minutes ?? 0)` at build time.
+- **Total time is never stored**: JSON-LD `totalTime`, search indexing, and card badges compute `total_minutes = prep_minutes + cook_minutes + (rest_minutes ?? 0)` at build time. Background prep tasks (`prep_tasks`) and parallel passive lanes are excluded from this scalar sum.
+- **Time ledger consistency (`TIME_LEDGER_MISMATCH`)**: If `timings.cook_minutes` is less than the sequential sum of active step `time_minutes` (or sequential `timers` durations), verification emits warning `TIME_LEDGER_MISMATCH`.
 
 ---
 
@@ -139,7 +142,7 @@ Each ingredient instance must specify:
 1. `id`: Lowercase ASCII identifier (`^[a-z0-9_-]+$`), unique within the recipe.
 2. **Identity** (exclusively one of the following two):
    - **Canonical food**: `food: string | null`. Must resolve to a valid food ID in `data/foods.yaml`. Mandatory non-null when any language state is `'reviewed'`. If `food: null` (allowed in `draft`/`unverified`), `name: { cs: string, en: string }` is mandatory. An optional `name` override may be provided alongside a non-null `food` to specify culinary display nuances (e.g. "Dijon mustard").
-   - **Sub-recipe component**: `component: string`. Target recipe `id`. Composition depth must be $\le 2$ (a component cannot itself consume components). Component reference graphs must be strictly acyclic.
+   - **Sub-recipe component**: `component: string`. Target recipe `id`. Composition depth adheres to a 2-level hierarchy: a parent dish (level 0) may consume component recipes (level 1), and a component recipe cannot itself consume further components (max edge depth = 1). Component reference graphs must be strictly acyclic (`COMPONENT_DAG`). Components included in search facets and badges are restricted to those actually built in that language (`COMPONENT_BUILD_AVAILABILITY`).
 3. `amount`: Positive `number`, two-element range `[number, number]`, or `null`. `amount` is `null` if and only if `unit` is `null` (representing unquantified items like "podle chuti" / "to taste").
 4. `unit`: Valid `UnitId` from the canonical unit registry, or `null`.
 5. `alternate`: Optional `{ amount: number | [number, number], unit: UnitId }`. Authored secondary measurement (ADR-0004), rendered verbatim and suppressing automatic unit conversions.
@@ -228,7 +231,7 @@ $$\text{rows}(S) = \{ \text{row}(I) \mid I \in \text{ingredients}, I.\text{step}
 
 1. **Non-empty check**: Every step must consume at least one ingredient instance or one prior step: $\text{rows}(S) \neq \emptyset$.
 2. **Topological row ordering**: Ingredient rows are ordered by the index of the first step that consumes them, preserving authoring order within ties: $\text{order}(I) = (\min \{ \text{index}(S) \mid \text{row}(I) \in \text{rows}(S) \}, \text{instance\_index}(I))$.
-3. **Laminarity check**: Under this row ordering, for every step $S$, $\text{rows}(S)$ must form a **contiguous integer interval** $[\min(\text{rows}(S)), \max(\text{rows}(S))]$. Spans must nest or sit side-by-side; they must never cross. If spans cross, the generator refuses matrix generation and falls back to `phase-rail` (ADR-0003).
+3. **Laminarity check**: Under this row ordering, for every step $S$, $\text{rows}(S)$ must form a **contiguous integer interval** $[\min(\text{rows}(S)), \max(\text{rows}(S))]$. Spans must nest or sit side-by-side; they must never cross. If spans cross: when `table_layout: 'auto'` (default), the generator emits a build warning and falls back to `phase-rail` (ADR-0003); when `table_layout: 'matrix'` is explicitly authored on a recipe with crossing spans, verification fails immediately with `MATRIX_LAMINARITY` (Exit Code 1).
 
 ---
 
@@ -278,11 +281,17 @@ variants:
 
 ### 7. Allergens and Nutrition
 
-#### Allergens
+#### Allergens, Diets, and Safety Invariants
 A recipe does not require manual authoring of baseline allergens; they are derived deterministically:
-1. **Mandatory allergens**: Union of EU 1169/2011 allergens from all non-optional linked `food` entries in `data/foods.yaml`, plus components' mandatory allergens, plus `allergens_add`, minus `allergens_remove`.
-2. **Optional allergens**: Allergens introduced exclusively by instances marked `optional: true`. Displayed with an "optional / may contain" indicator.
-3. **Allergen removal guard**: If `allergens_remove` is used, each entry must be an object specifying the allergen and a mandatory bilingual culinary reason:
+1. **Mandatory allergens (`allergens.mandatory`)**: Union of EU 1169/2011 allergens from all non-optional linked `food` entries in `data/foods.yaml`, plus components' mandatory allergens, plus `allergens_add`, minus `allergens_remove`.
+2. **Optional allergens (`allergens.optional`)**: Allergens introduced exclusively by instances marked `optional: true` (minus any that also appear in mandatory instances). Displayed strictly with the copy: *"Volitelná surovina obsahuje <alergen> — lze vynechat / Optional ingredient contains <allergen> — can be omitted"* (the legally loaded FIC phrase "may contain" is strictly prohibited).
+3. **Allergen Union Rule**: If an allergen appears in both a mandatory instance and an optional instance, it is treated strictly as mandatory (excluded under `allergen_not`, with no optional badge).
+4. **Non-Removable Detected Sets (`allergens_detected`, `origins_detected`, `animal_products_detected`)**:
+   To prevent safety loopholes where `allergens_remove` or variants could launder an ingredient into a false diet claim (ADR-0010), the compiler derives:
+   - `allergens_detected`: raw union of linked-food `allergens` across all base ingredients (both mandatory and optional) and components **before** any `allergens_add` or `allergens_remove`.
+   - `origins_detected`: raw union of biological `origin` values (`plant`, `animal`, `fungi`, `mineral`, `synthetic`) across all linked foods.
+   - `animal_products_detected`: raw union of `animal_product` values (`meat`, `poultry`, `fish`, `crustacean`, `mollusc`, `dairy`, `egg`, `honey`) across all linked foods.
+5. **Allergen Removal Guard (`allergens_remove`)**: If `allergens_remove` is used, each entry must be an object specifying the allergen and a mandatory bilingual culinary reason:
    ```yaml
    allergens_remove:
      - allergen: milk
@@ -290,6 +299,16 @@ A recipe does not require manual authoring of baseline allergens; they are deriv
          cs: Použito přepuštěné máslo (ghee) zbavené mléčných bílkovin.
          en: Clarified butter (ghee) used with milk solids removed.
    ```
+   Even when `allergens_remove: [{ allergen: milk, reason: ... }]` is declared, `allergens_detected` retains `milk` and `animal_products_detected` retains `dairy`. `allergens_remove` affects recipe card display and `allergen_not` search filtering, but **never clears a `forbid_allergens` diet gate**. Any usage of `allergens_remove` requires explicit culinary rationale documented in `review.<lang>.notes`. Furthermore, whenever `allergens_detected` differs from `allergens.mandatory`, the rendered recipe card surfaces an explicit explanatory note to inform the reader.
+6. **Diet Declarations (`diets`) and Conflict Verification (`DIET_ALLERGEN_CONFLICT`, Exit 1)**:
+   - Any recipe declaring an entry in `diets` must have zero unlinked ingredients (`food !== null`), enforced by `DIET_UNLINKED_FOOD` (Exit 1).
+   - Each diet in `data/taxonomy.yaml#diets` carries a mandatory bilingual disclaimer (`disclaimer: { cs, en }`, e.g. clarifying that the claim reflects recipe ingredients and does not guarantee absence of kitchen cross-contamination, enforced by `DIET_DISCLAIMER_PRESENT`, Exit 1).
+   - Diet claims are evaluated deterministically against `allergens_detected`, `origins_detected`, and `animal_products_detected`. The single documented exception is `lactose-free`, which evaluates `forbid_mandatory_allergens` against `allergens.mandatory` + `allergens.optional`:
+     - `gluten-free`: declares `forbid_allergens: [gluten]`, forbidding `gluten` in `allergens_detected` (mandatory and optional).
+     - `dairy-free`: declares `forbid_allergens: [milk]` and `forbid_animal_products: [dairy]`, forbidding `milk` in `allergens_detected` and `dairy` in `animal_products_detected`.
+     - `lactose-free`: declares `forbid_mandatory_allergens: [milk]`, forbidding `milk` in `allergens.mandatory` + `allergens.optional` (permitting clarified butter/ghee where milk solids are removed with an explicit culinary reason in `allergens_remove`, or lactose-free dairy substitutes).
+     - `vegetarian`: declares `forbid_allergens: [fish, crustaceans, molluscs]` and `forbid_animal_products: [meat, poultry, fish, crustacean, mollusc]`.
+     - `vegan`: declares `forbid_allergens: [milk, eggs, fish, crustaceans, molluscs]` and `forbid_origins: [animal]`.
 
 #### Nutrition
 Nutrition is optional, but when present, must adhere to a strict factual basis:
@@ -430,9 +449,8 @@ cuisine: french
 difficulty: medium
 tags:
   - classic
-  - sauce
-  - french
-  - cheese
+  - gratin
+  - bistro
 table_layout: auto
 
 yield:
@@ -696,21 +714,32 @@ images:
 | `STEP_REF_INTEGRITY` | Error (Exit 1) | Every `ingredient.step` and `prep_task.before_step` resolves to an existing step in `steps`. |
 | `CONSUMES_DAG` | Error (Exit 1) | `step.consumes` contains only prior step IDs ($P < S$ in document order). No cycles, no forward references. |
 | `FOOD_REGISTRY_LINK` | Error (Exit 1) | In `reviewed` recipes, every non-component instance must link to a non-deprecated `food` ID in `data/foods.yaml`. |
-| `COMPONENT_DAG` | Error (Exit 1) | Target component recipe exists, is acyclic, and has total composition depth $\le 2$. |
+| `COMPONENT_DAG` | Error (Exit 1) | Target component recipe exists, is acyclic, and adheres to a 2-level hierarchy: parent (level 0) $\to$ component (level 1), max edge depth = 1. |
 | `COMPONENT_BRIDGE` | Error (Exit 1) | If component is consumed in a dimension differing from component's `yield.unit`, component must declare `yield.alternate` in that dimension. |
+| `COMPONENT_BUILD_AVAILABILITY` | Error (Exit 1) | Published recipe or search index entry references a component that is not published in that language. |
+| `TAXONOMY_CATEGORY_UNKNOWN` | Error (Exit 1) | `category` fails to resolve to an active ID in `data/taxonomy.yaml#categories`. |
+| `TAXONOMY_CUISINE_UNKNOWN` | Error (Exit 1) | `cuisine` fails to resolve to an active ID in `data/taxonomy.yaml#cuisines`. |
+| `TAXONOMY_TAG_UNKNOWN` | Error (Exit 1) | Any entry in `tags` fails to resolve to an active ID in `data/taxonomy.yaml#tags`. |
+| `TAXONOMY_DIET_UNKNOWN` | Error (Exit 1) | Any entry in `diets` fails to resolve to an active ID in `data/taxonomy.yaml#diets`. |
+| `TAXONOMY_TAG_LIMIT_EXCEEDED` | Error (Exit 1) | Recipe declares $> 8$ tags in `tags`, violating card layout density and chip visual budget. |
+| `TAG_DUPLICATE_INSTANCE` | Error (Exit 1) | Duplicate tag ID declared within `tags` or `diets` on the same recipe. |
+| `DIET_ALLERGEN_CONFLICT` | Error (Exit 1) | Recipe declares a diet claim that violates conflict rules against `allergens_detected`, `origins_detected`, or `animal_products_detected`. |
+| `DIET_UNLINKED_FOOD` | Error (Exit 1) | Recipe declares one or more entries in `diets` while containing unlinked ingredients (`food: null`). |
+| `DIET_DISCLAIMER_PRESENT` | Error (Exit 1) | Diet entry in `data/taxonomy.yaml#diets` is missing mandatory bilingual `disclaimer: { cs, en }`. |
+| `TIME_LEDGER_MISMATCH` | Warning | `timings.cook_minutes` is less than the sequential sum of active step `time_minutes` or `timers` durations. |
 | `LANGUAGE_PARITY` | Error (Exit 1) | For all languages not in `'draft'`, step count, step IDs, sequence, timings, temperatures, and instance step bindings are identical. |
 | `ZERO_TOKEN_PROSE` | Error (Exit 1) | Step prose matches regex `\{[^\}]+\}` or contains raw unescaped ingredient amounts. |
-| `MATRIX_LAMINARITY` | Warning / Fallback | If row sets $\text{rows}(S)$ contain crossing spans, table layout automatically falls back to `phase-rail`. |
+| `MATRIX_LAMINARITY` | Error (Exit 1) / Warning | If explicit `table_layout: 'matrix'` and step intervals cross, fails with Exit 1. If `table_layout: 'auto'` (default) and step intervals cross, emits build warning and falls back cleanly to `phase-rail`. |
 | `EMPTY_STEP_ROWS` | Error (Exit 1) | Any step has $\text{rows}(S) = \emptyset$ (consumes neither ingredients nor prior steps). |
 | `PROVENANCE_FAIL_CLOSED` | Error (Exit 2) | Adapted recipe missing `provenance.yaml`, missing `source_extract_sha256`, or missing `source_extract`. |
 | `NUTRITION_SERVING_SIZE` | Error (Exit 1) | `nutrition.basis == 'per_serving'` and `yield.unit !== 'porce'`, but `serving_size` is missing. |
 
-### 2. Required Mutants under `tests/corpus/mutants/`
+### 2. Representative Mutants (see ADR-0008 §5 for the complete 54-mutant matrix)
 
 Per ADR-0002, `mise run verify` must fail if any mutant passes or is missing from the test harness:
 
 1. `mutant-dangling-step`: An ingredient instance references `step: non-existent-step`.
-2. `mutant-crossing-spans`: A recipe where step 1 uses ingredient A, step 2 uses ingredient B and step 1 output, and step 3 uses ingredient A and step 2 output, creating crossing intervals in the matrix. Must cleanly trigger fallback to `phase-rail` without crash.
+2. `mutant-crossing-spans`: A recipe with explicit `table_layout: matrix` where step 1 uses ingredient A, step 2 uses ingredient B and step 1 output, and step 3 uses ingredient A and step 2 output, creating crossing intervals in the matrix. Must fail `MATRIX_LAMINARITY` with **Exit Code 1**. (When `table_layout: auto`, cleanly triggers fallback to `phase-rail` with a build warning).
 3. `mutant-token-in-prose`: A step prose string containing `@butter{30%g}` or `{flour}`. Must fail `ZERO_TOKEN_PROSE`.
 4. `mutant-disagreeing-step-count`: A recipe where Czech has 4 steps and English has 3 steps. Must fail `LANGUAGE_PARITY`.
 5. `mutant-missing-provenance`: An adapted recipe with `origin: adapted` but no `provenance.yaml`. Must exit with **code 2**.

@@ -94,7 +94,7 @@ The import process is divided into two decoupled phases: **Phase A (Scrape & Ext
 
 #### Phase B: Scaffold & Authoring
 1. **Scaffolding `recipes/<id>/recipe.yaml`**:
-   - Generates a valid recipe skeleton carrying an immutable 6-character Crockford Base32 `uid` (ADR-0006, ADR-0007), `id`, `yield`, `prep_time_minutes`, `cook_time_minutes`, and canonical ingredients derived from `source_extract.quantities`.
+   - Generates a valid recipe skeleton carrying an immutable 6-character Crockford Base32 `uid` (ADR-0006, ADR-0007), `id`, `yield`, `timings` (`prep_minutes`, `cook_minutes`, `rest_minutes`), and canonical ingredients derived from `source_extract.quantities`.
    - Both language states are initialized to `draft`:
      ```yaml
      state:
@@ -148,7 +148,7 @@ Let recipe $R$ have yield amount $Y_R = R.\text{yield.amount}$ (in servings or d
 | Jaccard Similarity $J_\tau(A, B)$ | Enforcement Gate | Verification Action |
 |---|---|---|
 | $J_\tau(A, B) \ge 0.90$ | **`CORPUS_DUPLICATE_BLOCK`** | **Error (Exit 1)**. Candidate formula is an impermissible duplicate of recipe $B$. Candidate cannot be admitted as an independent top-level recipe. It must either be rejected or merged as a variant of $B$ (`parent: <B.id>`). |
-| $0.75 \le J_\tau(A, B) < 0.90$ | **`CORPUS_NEAR_VARIANT_WARN`** | **Warning in `draft` / `unverified`**; **Error (Exit 1) `CORPUS_UNRESOLVED_NEAR_VARIANT` in `reviewed`**. Candidate formula is closely related to $B$. Admissible only if declared with `parent: <B.id>`, or explicitly acknowledged in `provenance.yaml` (`not_duplicate_of: [<B.id>]`) with culinary justification in `review.<lang>.notes`. |
+| $0.75 \le J_\tau(A, B) < 0.90$ | **`CORPUS_NEAR_VARIANT_WARN`** | **Warning in `draft` / `unverified`**; **Error (Exit 1) `CORPUS_UNRESOLVED_NEAR_VARIANT` in `reviewed`**. Candidate formula is closely related to $B$. Admissible only if declared with `parent: <B.id>`, or explicitly acknowledged in `provenance.yaml` (`not_duplicate_of: [{ id: <B.id>, rationale: "<string>" }]`) with culinary justification in `review.<lang>.notes`. |
 | $J_\tau(A, B) < 0.75$ | Pass | Unique culinary formula. Admitted as independent recipe without restriction. |
 
 #### Plagiarism Checks Against Adapted Source (`origin: adapted`)
@@ -187,23 +187,26 @@ The three valid states are `draft`, `unverified`, and `reviewed`.
 |---|---|---|---|
 | **Build Emission (`dist/`)** | **Excluded**. Directory `dist/<lang>/...` is NOT created. | **Emitted**. Static HTML page emitted for editorial review, preview, and mobile QA. | **Emitted**. Static HTML page emitted for public indexing. |
 | **UI Visual Badge** | N/A (not built). | **Mandatory Banner**. Visible warning banner rendered above recipe header: *"Neověřený recept — testovací verze"* / *"Unverified recipe — test version"*. | **No warning banner**. Subtle editorial verification stamp / metadata rendered. |
-| **Search Indexing (`robots`)** | N/A (not built). | `<meta name="robots" content="noindex, nofollow">` | `<meta name="robots" content="index, follow">` |
+| **Search Indexing (`robots`)** | N/A (not built). | `<meta name="robots" content="noindex,follow">` (preserves outbound link equity to reviewed recipes and terms, matching ADR-0007). | `<meta name="robots" content="index,follow">` |
+| **Search UI Discovery** | **Excluded**. | **Excluded by default**. Visible in search only when editor toggle `?include_unverified=1` is active (persisted in `localStorage`, never crawlable default). | **Included by default**. Core searchable corpus. |
 | **JSON-LD (`schema.org/Recipe`)** | **Omitted**. | **Omitted**. `<script type="application/ld+json">` is completely stripped to prevent search scrapers from ingesting unverified data. | **Emitted**. Full, structured `schema.org/Recipe` emitted with ingredients, steps, timings, allergens, and nutrition. |
 | **`sitemap.xml` & `hreflang`** | **Omitted** from sitemap and `hreflang` alternates. | **Omitted** from `sitemap.xml`. Excluded from `hreflang` alternates on other pages (ADR-0007). | **Included** in `sitemap.xml`. Emitted as `<link rel="alternate" hreflang="...">` across all companion `reviewed` pages. |
 | **Verification Gates** | - Valid YAML syntax.<br>- Recipe `uid` valid Crockford Base32. | - All schema rules hold.<br>- Matrix laminarity or clean `phase-rail` fallback.<br>- Step DAG `consumes` acyclic.<br>- Structural language parity holds across non-draft locales.<br>- Unlinked ingredients (`food: null`) permitted.<br>- `published_at` optional. | - All `unverified` gates pass.<br>- 100% ingredients linked to `data/foods.yaml` (`food !== null`).<br>- `published_at` mandatory.<br>- `provenance.yaml` review sign-off present with matching cryptographic hash.<br>- Component monotonicity holds.<br>- Near-variants resolved. |
 
 #### Component State Monotonicity
 
-When a recipe references other recipes as components via the `components` field (ADR-0001, ADR-0006), composite dishes must not claim a higher degree of verification than their sub-recipes.
+When a recipe references other recipes as components via the `ingredients[].component` field (ADR-0001, ADR-0006), composite dishes must not claim a higher degree of verification than their sub-recipes.
 
 We define the strict total ordering of publication state ranks:
 $$\text{rank}(\text{draft}) = 0 < \text{rank}(\text{unverified}) = 1 < \text{rank}(\text{reviewed}) = 2$$
 
 **The Monotonicity Invariant**:
-For every language $L \in \{\text{cs}, \text{en}\}$ and every component $C \in R.\text{components}$:
+For every language $L \in \{\text{cs}, \text{en}\}$ and every component $C \in \{ C \mid I \in R.\text{ingredients}, I.\text{component} = C.\text{id} \}$:
 $$\text{rank}(R.\text{state}[L]) \le \text{rank}(C.\text{state}[L])$$
 
 If any recipe violates this invariant—e.g. recipe $R$ is marked `reviewed` in Czech ($\text{rank} = 2$) while component $C$ is marked `unverified` ($\text{rank} = 1$) or `draft` ($\text{rank} = 0$) in Czech—`mise run verify:fast` terminates with **`COMPONENT_STATE_INVERSION` (Exit Code 1)**.
+
+Furthermore, component composition strictly adheres to a 2-level hierarchy: a parent dish (level 0) may consume component recipes (level 1), and a component recipe cannot itself consume further components (max edge depth = 1, ADR-0006). In the search index and facet filtering, referenced component ingredients and preparation minutes are restricted strictly to components actually built in that language (`COMPONENT_BUILD_AVAILABILITY`, ADR-0006, ADR-0010).
 
 ---
 
@@ -237,7 +240,7 @@ The CLI executes the following deterministic steps:
    --------------------------------------------------------------------------------
    Prose Similarity: Shingle Overlap = 0.0% (Threshold <= 5.0%) [PASS]
    Laminarity: OK (1 lane, 0 crossing intervals) [PASS]
-   Allergens Derived: milk, gluten, egg [PASS]
+   Allergens Derived: milk, gluten, eggs [PASS]
    ================================================================================
    Approve recipe 'mornay-sauce' for publication state 'reviewed' in [cs]? (y/N):
    ```
@@ -256,18 +259,17 @@ $\Pi_{\text{lang}}(R)$ extracts a deterministic subset of fields:
 1. **Included Shared Quantitative and Structural Fields**:
    - `id`, `uid`, `table_layout`
    - `yield` (`amount`, `unit`, `alternate`)
-   - `prep_time_minutes`, `cook_time_minutes`
+   - `timings` (`prep_minutes`, `cook_minutes`, `rest_minutes`)
    - `nutrition` (`basis`, `serving_size`, values)
-   - `components` (`id`, `amount`, `unit`)
-   - `ingredients` (`food`, `amount`, `unit`, `dim`, `optional`, `step`, `notes`)
-   - `prep_tasks` structural keys (`id`, `before_step`)
-   - `steps` structural keys (`id`, `lane`, `temp_c`, `time_minutes`, `timers`, `consumes`)
+   - `ingredients` (`id`, `food`, `component`, `amount`, `unit`, `alternate`, `scaling`, `optional`, `step`, `note`)
+   - `prep_tasks` structural keys (`id`, `before_step`, `temp_c`, `time_minutes`)
+   - `steps` structural keys (`id`, `phase`, `lane`, `temp_c`, `time_minutes`, `timers`, `consumes`)
 2. **Included Language-Specific Text Fields for Target $\text{lang}$**:
    - `title[lang]`
    - `summary[lang]`
    - `slug[lang]`
    - `slug_aliases[lang]` (if present)
-   - `prep_tasks[i].text[lang]`
+   - `prep_tasks[i].prose[lang]`
    - `steps[i].prose[lang]`
 3. **Explicitly Excluded Fields**:
    - All text and slug fields for other languages (e.g. `title.en`, `summary.en`, `slug.en`, `steps[].prose.en` when $\text{lang} = \text{cs}$).
@@ -421,7 +423,7 @@ images:
 | Rule | Severity | Deterministic Condition |
 |---|---|---|
 | `CORPUS_DUPLICATE_BLOCK` | Error (Exit 1) | Candidate recipe has continuous tolerance-matched Jaccard $J_\tau(A, B) \ge 0.90$ against an existing corpus recipe. Candidate must be merged as a variant or rejected. |
-| `CORPUS_UNRESOLVED_NEAR_VARIANT` | Error (Exit 1) | Recipe in `reviewed` state has $0.75 \le J_\tau(A, B) < 0.90$ against existing recipe $B$ without either `parent: <B.id>` or explicit `not_duplicate_of: [<B.id>]` in `provenance.yaml` with notes justification. |
+| `CORPUS_UNRESOLVED_NEAR_VARIANT` | Error (Exit 1) | Recipe in `reviewed` state has $0.75 \le J_\tau(A, B) < 0.90$ against existing recipe $B$ without either `parent: <B.id>` or explicit `not_duplicate_of: [{ id: <B.id>, rationale: "<string>" }]` in `provenance.yaml` with notes justification. |
 | `PROSE_PLAGIARISM_DETECTED` | Error (Exit 1) | Adapted recipe step prose has 8-word normalized shingle overlap $> 0.05$ ($5\%$) against `source_extract.prose_fingerprint`. |
 | `IMAGE_DUPLICATE_OR_COPIED` | Error (Exit 1) | Recipe image has 64-bit DCT perceptual hash Hamming distance $\le 6$ against scrape image digest while `origin !== 'licensed'`. |
 | `REVIEW_STALE_CONTENT_HASH` | Error (Exit 1) | Recipe in `reviewed` state has $\text{SHA256}(\text{JCS}(\Pi_L(R))) \ne \text{provenance.review}[L].\text{recipe\_content\_sha256}$, indicating unreviewed edits to shared quantities or locale prose. |
@@ -430,7 +432,7 @@ images:
 
 ### Mutant Catalog Additions (Mutants 38–44)
 
-The 7 additions expand the unified mutant catalog in ADR-0008 from 37 to 44 mutants:
+The 7 additions define mutants 38–44 (see ADR-0008 §5 for the complete 54-mutant matrix):
 
 | # | Mutant ID | Originating ADR | Expected Rule Code | Exit Code | Injected Defect | Tier |
 |---|---|---|---|---|---|---|

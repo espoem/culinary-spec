@@ -13,6 +13,8 @@ Subsequent architectural decisions expanded the structural invariants of Culinar
 - **ADR-0005** established the canonical food registry (`data/foods.yaml`), EU 1169/2011 allergen derivation, acyclic deprecation chains, and composition aggregation.
 - **ADR-0006** formalized the recipe document contract (`recipe.yaml`), intermediate step consumption DAGs (`consumes`), acyclic component references (depth $\le 2$), matrix geometry laminarity, per-language publication states (`draft`, `unverified`, `reviewed`), and mandatory provenance extracts.
 - **ADR-0007** established the URL routing and internationalization contract: symmetric `/cs/` and `/en/` language prefixes, mandatory trailing slashes, Crockford Base32 `uid` validation, static redirect stubs for mutable `slug` aliases and immutable shortlinks (`/<lang>/<section>/<uid>/`), interactive state preservation across language switching, and strict SEO parity (`hreflang` and `sitemap.xml` suppressed on unreviewed drafts).
+- **ADR-0009** established the content pipeline, tolerance-matched Jaccard similarity ($J_\tau$), cryptographic review binding ($\Pi_{\text{lang}}(R)$), component state monotonicity, and out-of-band source drift audits.
+- **ADR-0010** established search facets, the closed taxonomy registry (`data/taxonomy.yaml`), authoritative allergen tokens (`data/allergens.yaml`), biological origin validation, search index schema, word-boundary text matching, deterministic tie-breaking, fail-closed safety filtering, and accessible single-filter relaxation.
 
 However, turning ADR-0002 into an executable, non-vacuous, everyday development harness revealed three critical operational challenges:
 
@@ -45,7 +47,7 @@ Verification is structured into three discrete commands managed via `mise`:
                                     ▼
                        ┌─────────────────────────┐
                        │   mise run verify:slow  │  (Playwright Chromium on dist/)
-                       │   Routes, 3-Stage Axe   │  State preservation, Budgets
+                       │   Routes, 4-Stage Axe   │  State preservation, Budgets
                        │   Print-Media Smoke     │  Zero Poppler dependencies
                        └────────────┬────────────┘
                                     │
@@ -65,25 +67,38 @@ Runs locally on every commit via `hk` and in CI on every push. Requires only Nod
 1. **Contract & Environment Integrity (`assert-a11y-contract`)**: Asserts that `.oxlintrc.json` and `tests/verify/axe-rules.json` are present, non-empty, and match the canonical 12-rule accessibility contract. Verifies zero inline suppression comments in `src/`. Exits immediately with **Exit Code 2** if tampered.
 2. **Static Linting (`oxlint`)**: Executes `oxlint --deny-warnings` enabling `jsx-a11y` rules and custom SolidJS/a11y plugin rules (enforcing standard HTML `for` on `<label>`, forbidding React-specific attributes like `className` or `htmlFor`, and banning destructured props that break Solid fine-grained signal reactivity). Supplemented by `ast-grep` (`sg scan`) for structural AST guards where linter rules do not apply.
 3. **TypeScript Typecheck (`tsc --noEmit`)**: Validates complete type soundness across `src/` and `scripts/`.
-4. **Corpus & Schema Validation**: Validates all recipes in `recipes/` against JSON Schema / Zod definitions, verifies Crockford Base32 `uid` uniqueness and formatting, validates referential integrity of ingredient `step` and prep-task `before_step` IDs, verifies intermediate step consumption DAGs (`consumes`), checks component composition DAGs (acyclic, depth $\le 2$), validates component dimension bridges (`yield.alternate`), verifies variant matrix laminarity, and asserts structural language parity across non-draft locales (`structural_language_parity_holds_across_published_locales`).
+4. **Corpus, Schema, Taxonomy & Search Validation**:
+   - Validates all recipes against JSON Schema / Zod definitions, verifies Crockford Base32 `uid` uniqueness and formatting, validates referential integrity of ingredient `step` and prep-task `before_step` IDs, verifies intermediate step consumption DAGs (`consumes`), checks component composition DAGs (acyclic, 2-level hierarchy: parent $\to$ component, max edge depth = 1), validates component dimension bridges (`yield.alternate`), verifies variant matrix laminarity, and asserts structural language parity across non-draft locales (`LANGUAGE_PARITY`).
+   - Asserts allergen registry presence and validity (`ALLERGEN_REGISTRY_PRESENT`, Exit 2; `ALLERGEN_CANONICAL_TOKEN`, Exit 1).
+   - Asserts mandatory biological `origin` in `data/foods.yaml` (`FOOD_ORIGIN_MISSING`, Exit 1).
+   - Validates taxonomy registry presence, schema, global ID uniqueness, and immutability (`TAXONOMY_REGISTRY_PRESENT`, Exit 2; `TAXONOMY_SCHEMA`, Exit 1; `TAXONOMY_ID_GLOBAL_UNIQUE`, Exit 1; `TAXONOMY_ID_IMMUTABLE`, Exit 1).
+   - Verifies recipe taxonomy references, duplicate tag absence, and tag count cap $\le 8$ (`TAXONOMY_CATEGORY_UNKNOWN`, `TAXONOMY_CUISINE_UNKNOWN`, `TAXONOMY_TAG_UNKNOWN`, `TAXONOMY_DIET_UNKNOWN`, `TAG_DUPLICATE_INSTANCE`, `TAXONOMY_TAG_LIMIT_EXCEEDED`, Exit 1).
+   - Enforces diet claims: evaluates `forbid_allergens` against non-removable `allergens_detected`, `origins_detected`, and `animal_products_detected` (with the documented exception of `lactose-free` evaluating `forbid_mandatory_allergens` against `allergens.mandatory` + `allergens.optional`), checks zero unlinked foods on diet recipes, and verifies mandatory disclaimers (`DIET_ALLERGEN_CONFLICT`, `DIET_UNLINKED_FOOD`, `DIET_DISCLAIMER_PRESENT`, Exit 1).
+   - Validates search index schema, asserts semantic bilingual token union `folded.* == fold(cs) ∪ fold(en)` against source recipes, and guarantees 100% build coverage of published recipes without draft leakage (`SEARCH_INDEX_SCHEMA`, `SEARCH_INDEX_COVERAGE`, Exit 1).
+   - Validates that external vendored runtime dependencies adhere to integrity pinning (`DEPENDENCY_PINNED`, Exit 1): this is a Phase 2 contingency rule that activates only when the Phase 2 `MiniSearch` feature flag is enabled (and therefore has no Phase 1 mutant in the 54-mutant matrix).
+   - Free of synthetic 500-recipe micro-benchmarks; O(recipes $\times$ tags) execution completes in $< 100\text{ ms}$, safely within the 2.0 s SLA.
 5. **Literal Arithmetic & Scaling Suite (`literal_scaling_and_unit_arithmetic`)**: Executes pure-function unit conversion, magnitude rounding, eighth-based spoon formatting, outward range scaling, and portion refusal assertions against in-test literal expectations.
-6. **Provenance Sidecar Verification**: Evaluates all adapted recipes in `recipes/`: verifies presence of `provenance.yaml`, `source_extract_sha256`, and normalized source extract (fails closed with **Exit Code 2** if missing). Asserts Continuous Tolerance-Matched Bipartite Jaccard index $J_\tau < 0.90$, 8-word shingle overlap $\le 0.05$, and 64-bit DCT perceptual hash (`phash`) Hamming distance $> 6$ for licensed images.
+6. **Provenance Sidecar Verification**: Evaluates all adapted recipes in `recipes/`: verifies presence of `provenance.yaml`, `source_extract_sha256`, and normalized source extract (fails closed with **Exit Code 2** if missing). Asserts Continuous Tolerance-Matched Bipartite Jaccard index $J_\tau < 0.90$, 8-word shingle overlap $\le 0.05$, and 64-bit DCT perceptual hash (`phash`) Hamming distance $> 6$ against scraped source images when `origin !== 'licensed'` (`IMAGE_DUPLICATE_OR_COPIED`).
 7. **Static Print-Readiness Checks**: Validates presence of `@page { size: A4 }` rules in print stylesheets, verifies `break-inside: avoid` on step and matrix rows, and asserts that QR code shortlink targets strictly match `/<lang>/(recepty|recipes)/<uid>/`.
-8. **Consolidated Mutant Runner**: Executes all 44 mutants in `tests/corpus/mutants/`, asserting 100% kill rate with exact expected rule codes and exit codes.
+8. **Consolidated Mutant Runner**: Executes all 54 mutants in `tests/corpus/mutants/` (count derived dynamically from manifest catalog), asserting 100% kill rate with exact expected rule codes and exit codes.
 
 #### Tier 2: `mise run verify:slow` (Playwright Headless Chromium)
 Runs against production static build output in `dist/`. Requires headless Chromium via Playwright, but **zero Poppler or external OS utilities**:
-1. **Route & Link Verification**: Crawls all generated static HTML files; asserts symmetric language prefixes (`/cs/`, `/en/`), trailing slash termination on all links and canonical tags, static redirect stubs for `slug_aliases` and immutable `<uid>` shortlinks, complete coverage of the `404.html` UID rescue map, bidirectional `hreflang` parity for `reviewed` pages, `sitemap.xml` validity, and schema.org `Recipe` JSON-LD compliance.
-2. **Three-Stage Post-Hydration `axe-core` Contract**: Scans rendered pages under light and dark themes across three required states:
+1. **Route, Link & Permanence Verification**: Crawls all generated static HTML files; asserts symmetric language prefixes (`/cs/`, `/en/`), trailing slash termination on all links and canonical tags, static redirect stubs for `slug_aliases`, deprecated tag aliases (`TAG_ALIAS_INTEGRITY`, Exit 1), and immutable `<uid>` shortlinks, thin tag page robot indexing assertions (`TAG_THIN_PAGE`, Exit 1), complete coverage of the `404.html` UID rescue map, bidirectional `hreflang` parity for `reviewed` pages, `<meta name="robots" content="noindex,nofollow">` on `/cs/hledani/` and `/en/search/` (`HREFLANG_SEO_PARITY`, Exit 1), `sitemap.xml` validity, and schema.org `Recipe` JSON-LD compliance.
+2. **Four-Stage Post-Hydration `axe-core` Contract**: Scans rendered pages under light and dark themes across four required states:
    - *State A (Hydrated DOM)*: Asserts zero violations on `document.body` after `data-hydrated="true"` is set.
    - *State B (Opened Dialog / Cook Mode)*: Triggers cook mode or modal dialog; asserts active focus trap, accessible name on dialog, and `Escape` key returning focus cleanly to the activating button.
    - *State C (Servings Stepper Interaction)*: Triggers portion stepper ($4 \to 6$); asserts that `document.activeElement` remains pinned to the stepper button and that `aria-live="polite"` announces the updated portion yield.
-3. **Language Switch State Preservation**: Navigates to a recipe with active kitchen state (`?yield=6&unit=imperial&variant=comte&mode=cook#step-roux`); activates `#lang-switch`; asserts that the target language page loads with all query parameters and fragment anchors perfectly preserved.
+   - *State D (Search & Facets)*: Navigates to `/cs/hledani/` and `/en/search/`; triggers search input, facet chip selection, and empty state; asserts `aria-live="polite"` announcements on result count, accessible names on removable filter chips, and strictly escaped text node rendering of reflected queries (`SEARCH_RESULT_ECHO_ESCAPED`, Exit 1).
+3. **Language Switch State Preservation**: Navigates to a recipe with active kitchen state (`?yield=6&unit=imperial&variant=comte&mode=cook#step-roux`); activates `#lang-switch`; asserts that the target language page loads with all query parameters and fragment anchors perfectly preserved. Also verifies search query preservation on `/cs/hledani/?q=omacka&tag=quick` switching to `/en/search/?q=omacka&tag=quick` (`LANG_SWITCH_TARGET_INTEGRITY`, `CANONICAL_PARAM_KEYS`, Exit 1).
 4. **Performance & INP Budgets**:
-   - Asset size ceilings: Total uncompressed JS bundle $\le 35\text{ kB}$ gzip; total CSS $\le 20\text{ kB}$ gzip.
+   - Asset size ceilings: Total compressed JS bundle $\le 35\text{ kB}$ gzip; total CSS $\le 20\text{ kB}$ gzip; search index payload ceiling pinned for `search-index.<lang>.json`.
    - Field floor metrics: Largest Contentful Paint (LCP) $\le 1500\text{ ms}$, Cumulative Layout Shift (CLS) $\le 0.02$.
-   - Interactive INP budget: Scripted `PerformanceObserver('event')` measuring duration of portion stepper clicks, unit toggles, and cook mode triggers; asserts $\text{INP duration} \le 100\text{ ms}$.
-5. **Browser Print-Media Smoke**: Executes `page.emulateMedia({ media: 'print' })`; asserts that global site navigation and interactive controls carry `display: none`, and that print-dedicated routes (`/cs/recepty/<uid>-<slug>/tisk/` and `/en/recipes/<uid>-<slug>/print/`) render without JavaScript execution errors.
+   - Interactive INP budget: Scripted `PerformanceObserver('event')` measuring duration of portion stepper clicks, unit toggles, and cook mode triggers; asserts $\text{INP duration} \le 100\text{ ms}$. Also asserts scripted keystroke latency (`input` $\to$ `rAF`, debounced 120 ms) and facet toggle response $\le 100\text{ ms}$.
+5. **Search Safety Filtering & Variant Integrity**:
+   - Asserts fail-closed zero-result behavior when unrecognized tokens are passed to `allergen_not` or `diet`, and asserts that unverified recipes with `food: null` are strictly excluded under safety filters even when `?include_unverified=1` is active (`SEARCH_INVALID_SAFETY_FILTER`, Exit 1).
+   - Asserts variant link integrity (`?variant=<V.id>`) when recipes match excluded allergen filters via clean substituted variants (`SEARCH_VARIANT_LINK_INTEGRITY`, Exit 1).
+6. **Browser Print-Media Smoke**: Executes `page.emulateMedia({ media: 'print' })`; asserts that global site navigation and interactive controls carry `display: none`, and that print-dedicated routes (`/cs/recepty/<uid>-<slug>/tisk/` and `/en/recipes/<uid>-<slug>/print/`) render without JavaScript execution errors.
 
 #### Tier 3: Phase 1 vs Phase 2 Separation
 - **`mise run verify` (Phase 1 Launch Gate)**:
@@ -106,16 +121,16 @@ The verification suite strictly adheres to three distinct exit codes:
 |---|---|---|
 | `0` | **PASS** | All assertions pass with strictly non-zero evidence counts ($N > 0$ recipes, $K > 0$ mutants killed, $R > 0$ axe rules checked). |
 | `1` | **RULE_VIOLATION** | A deterministic rule failed, a mutant survived, a schema validation error occurred, TypeScript failed typecheck, or a performance/INP budget was exceeded. |
-| `2` | **INTEGRITY_FAIL_CLOSED** | Test harness or environment integrity failure. Prevents vacuous green runs: missing `provenance.yaml` or scrape extract on adapted recipes; tampered, disabled, or empty accessibility contract; 0 recipes or 0 mutants discovered; or missing Poppler/fonts in `verify:print`. |
+| `2` | **INTEGRITY_FAIL_CLOSED** | Test harness or environment integrity failure. Prevents vacuous green runs: missing `provenance.yaml` or scrape extract on adapted recipes; missing, empty, or unparseable `data/allergens.yaml` (`ALLERGEN_REGISTRY_PRESENT`) or `data/taxonomy.yaml` (`TAXONOMY_REGISTRY_PRESENT`); tampered, disabled, or empty accessibility contract; 0 recipes or 0 mutants discovered; or missing Poppler/fonts in `verify:print`. |
 
 #### Deterministic Green Run Output
-Upon successful execution of `mise run verify`, the runner must output a single, parseable evidence summary string:
+Upon successful execution of `mise run verify`, the runner must output a single, parseable evidence summary string (with the mutant total derived dynamically from the manifest count):
 
 ```
-PASS verify (recipes: N, variants: M, mutants_killed: 44/44, arithmetic_assertions: A, oxlint_rules: 12, axe_rules_checked: 12 across 3 states, max_inp_ms: T)
+PASS verify (recipes: N, variants: M, mutants_killed: 54/54, arithmetic_assertions: A, oxlint_rules: 12, axe_rules_checked: 12 across 4 states, max_inp_ms: T)
 ```
 
-If any counter is zero (e.g. `recipes: 0` or `mutants_killed: 0/44`), the run is invalid and exits with code 2.
+If any counter is zero (e.g. `recipes: 0` or `mutants_killed: 0/54`), the run is invalid and exits with code 2.
 
 ---
 
@@ -138,7 +153,7 @@ Accessibility is maintained through an enforced mathematical mapping between sta
 ┌────────────────────────────────────────────────────────┐
 │             Runtime Analysis (verify:slow)             │
 │        Playwright + axe-core (axe-rules.json)          │
-│   Rendered DOM across 3 hydrated interaction states    │
+│   Rendered DOM across 4 hydrated interaction states    │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -198,9 +213,9 @@ The mutant runner in `verify:fast` iterates through every directory under `tests
 
 ---
 
-### 5. Consolidated 44-Mutant Matrix
+### 5. Consolidated 54-Mutant Matrix
 
-The complete, unified 44-row matrix spanning ADR-0004 through ADR-0009:
+The complete, unified 54-row matrix spanning ADR-0004 through ADR-0010:
 
 | # | Mutant ID | Governing ADR | Rule ID | Exit | Deterministic Trigger Condition | Tier |
 |---|---|---|---|---|---|---|
@@ -227,10 +242,10 @@ The complete, unified 44-row matrix spanning ADR-0004 through ADR-0009:
 | 21 | `mutant-unbridged-component` | ADR-0006 | `COMPONENT_BRIDGE` | 1 | Recipe consumes component in mass (`g`), but sub-recipe yields `porce` without `yield.alternate`. | Fast |
 | 22 | `mutant-disagreeing-step-count` | ADR-0006 | `LANGUAGE_PARITY` | 1 | Czech has 4 steps, English has 3 steps in published recipe. | Fast |
 | 23 | `mutant-token-in-prose` | ADR-0006 | `ZERO_TOKEN_PROSE` | 1 | Step prose contains embedded token syntax (`@butter{30%g}` or `{flour}`). | Fast |
-| 24 | `mutant-crossing-spans` | ADR-0006 | `MATRIX_LAMINARITY` | 1 | Matrix step intervals cross; verify asserts clean fallback to `phase-rail`. | Fast |
+| 24 | `mutant-crossing-spans` | ADR-0006 | `MATRIX_LAMINARITY` | 1 | Recipe with explicit `table_layout: matrix` has crossing step intervals $\to$ fails with `MATRIX_LAMINARITY` (Exit 1); when `table_layout: auto`, falls back cleanly to `phase-rail`. | Fast |
 | 25 | `mutant-empty-step-rows` | ADR-0006 | `EMPTY_STEP_ROWS` | 1 | Step consumes no ingredients and no prior step ($\text{rows}(S) = \emptyset$). | Fast |
 | 26 | `mutant-missing-provenance` | ADR-0006 | `PROVENANCE_FAIL_CLOSED` | 2 | Adapted recipe with `origin: adapted` lacks `provenance.yaml` or scrape extract. | Fast |
-| 27 | `mutant-provenance-high-jaccard` | ADR-0006 | `PROVENANCE_FORMULA_PLAGIARISM` | 1 | Re-expressed recipe has Quantity-tuple Jaccard $\ge 0.90$ against scrape extract. | Fast |
+| 27 | `mutant-food-origin-missing` | ADR-0005 | `FOOD_ORIGIN_MISSING` | 1 | Food entry in `data/foods.yaml` omits mandatory biological `origin` classification. | Fast |
 | 28 | `mutant-nutrition-missing-serving` | ADR-0006 | `NUTRITION_SERVING_SIZE` | 1 | `basis: per_serving` declared on non-portion yield without explicit `serving_size`. | Fast |
 | 29 | `mutant-missing-trailing-slash` | ADR-0007 | `ROUTE_TRAILING_SLASH` | 1 | Internal hyperlink emitted without trailing slash (`.../k8m2x9-mornay`). | Slow |
 | 30 | `mutant-asymmetric-route` | ADR-0007 | `ROUTE_SYMMETRIC_PREFIX` | 1 | Recipe page emitted at root `/recepty/...` without `/cs/` language prefix. | Slow |
@@ -248,6 +263,16 @@ The complete, unified 44-row matrix spanning ADR-0004 through ADR-0009:
 | 42 | `mutant-review-stale-content-hash` | ADR-0009 | `REVIEW_STALE_CONTENT_HASH` | 1 | Step prose or shared ingredient amount modified in `reviewed` recipe without re-executing `mise run review`. | Fast |
 | 43 | `mutant-review-source-drift` | ADR-0009 | `REVIEW_SOURCE_DRIFT` | 1 | `source_extract_sha256` updated following upstream source drift, but `review[L]` still carries old extract hash. | Fast |
 | 44 | `mutant-component-state-inversion` | ADR-0009 | `COMPONENT_STATE_INVERSION` | 1 | Recipe in `reviewed` state references a component whose state in that language is `unverified` or `draft`. | Fast |
+| 45 | `mutant-taxonomy-duplicate-id` | ADR-0010 | `TAXONOMY_ID_GLOBAL_UNIQUE` | 1 | `data/taxonomy.yaml` declares duplicate ID across categories, cuisines, diets, or tags. | Fast |
+| 46 | `mutant-taxonomy-unknown-tag` | ADR-0010 | `TAXONOMY_TAG_UNKNOWN` | 1 | Recipe declares tag ID not declared in `data/taxonomy.yaml#tags`. | Fast |
+| 47 | `mutant-taxonomy-over-limit-tags` | ADR-0010 | `TAXONOMY_TAG_LIMIT_EXCEEDED` | 1 | Recipe declares $> 8$ tags in `tags`, violating card layout density. | Fast |
+| 48 | `mutant-diet-allergen-conflict` | ADR-0010 | `DIET_ALLERGEN_CONFLICT` | 1 | Recipe declared `vegan` contains butter with `allergens_remove: [{ allergen: milk, reason: ... }]` (testing non-removable `allergens_detected`). | Fast |
+| 49 | `mutant-allergen-variant-launder` | ADR-0010 | `SEARCH_VARIANT_LINK_INTEGRITY` | 1 | Recipe matched under `allergen_not` via variant that fails to replace all allergen-bearing foods. | Slow |
+| 50 | `mutant-tag-thin-page` | ADR-0010 | `TAG_THIN_PAGE` | 1 | Tag page with $< 2$ reviewed recipes emits `index,follow` in robots metadata. | Slow |
+| 51 | `mutant-search-missing-index-entry` | ADR-0010 | `SEARCH_INDEX_COVERAGE` | 1 | Published recipe in language $L$ missing from generated `search-index.<L>.json`. | Fast |
+| 52 | `mutant-search-invalid-safety-filter` | ADR-0010 | `SEARCH_INVALID_SAFETY_FILTER` | 1 | Inbound safety filter (`?allergen_not=glutne` or `?diet=vegen`) fails to return zero results with safety banner, or `food: null` unverified recipe leaks under active safety filter. | Slow |
+| 53 | `mutant-tag-alias-missing-stub` | ADR-0010 | `TAG_ALIAS_INTEGRITY` | 1 | Deprecated tag entry in `data/taxonomy.yaml` lacks static 301 HTML redirect stub. | Slow |
+| 54 | `mutant-search-langswitch-q` | ADR-0010 | `SEARCH_INDEX_SCHEMA` | 1 | Generated search-index JSON missing bilingual folded text union (`folded.* != fold(cs) ∪ fold(en)`), causing cross-lingual query loss. | Fast |
 
 ---
 
@@ -257,7 +282,7 @@ The complete, unified 44-row matrix spanning ADR-0004 through ADR-0009:
 - **Fail-Closed Legal and Quality Posture**: The repository cannot publish scraped recipes without legal provenance (Exit 2), cannot disable accessibility rules via hidden comments (Exit 2), and cannot pass vacuously when fixtures or mutants are missing (Exit 2).
 - **Zero OS Dependency for Site Launch (Phase 1)**: The core static website, interactive kitchen cook mode, bilingual navigation, search, and accessibility are 100% verified via `mise run verify` without requiring Poppler or native font installations.
 - **Dedicated Physical Print Gate (Phase 2)**: Physical A4 PDF print verification is isolated in `mise run verify:print`. When run in Phase 2, it guarantees exact ISO A4 MediaBox dimensions, embedded vector fonts, and split-free page breaks with complete determinism.
-- **Comprehensive Regression Barrier**: The 44-mutant matrix guarantees that every single structural constraint defined in ADR-0004 through ADR-0009 is verified against an active, executable failure test.
+- **Comprehensive Regression Barrier**: The 54-mutant matrix guarantees that every rule family defined in ADR-0004 through ADR-0010 is verified against executable failure mutants in the 54-mutant matrix.
 
 ---
 

@@ -155,7 +155,7 @@ When an author edits a slug (e.g. changing `slug.cs` from `omacka-morne` to `oma
 
 ### 3. Complete Route Inventory & Localized Path Segments
 
-The culinary site exposes nine canonical surfaces across Czech and English:
+The culinary site exposes twelve canonical route surfaces across Czech and English:
 
 | Surface | Czech Path (`cs`) | English Path (`en`) | Indexing Policy | State Parameters / Notes |
 |---|---|---|---|---|
@@ -164,8 +164,8 @@ The culinary site exposes nine canonical surfaces across Czech and English:
 | **Permanent Shortlink** | `/cs/recepty/<uid>/` | `/en/recipes/<uid>/` | `noindex,follow` | Static 301 stub redirecting to canonical recipe detail. Target for print QR codes. |
 | **Recipe Print Sheet** | `/cs/recepty/<uid>-<slug>/tisk/` | `/en/recipes/<uid>-<slug>/print/` | `noindex,follow` | Dedicated paged A4 sheet. Canonical tag points to Recipe Detail. `@media print` is also supported directly on Recipe Detail. |
 | **Cook Mode** | `/cs/recepty/<uid>-<slug>/?mode=cook` | `/en/recipes/<uid>-<slug>/?mode=cook` | Not indexed | Query state `?mode=cook` on Recipe Detail. Never an independent route. Canonical points to clean Recipe Detail URL. |
-| **Tag Page** | `/cs/stitky/<tag-id>/` | `/en/tags/<tag-id>/` | `index,follow` | `<tag-id>` is lowercase ASCII kebab-case. |
-| **Search & Facets** | `/cs/hledani/` | `/en/search/` | `noindex,follow` | `?q=<text>&tag=<id>&category=<id>`<br>`&difficulty=easy\|medium\|hard`<br>`&allergen_not=<id>&sort=time\|title` |
+| **Tag Page** | `/cs/stitky/<tag-id>/` | `/en/tags/<tag-id>/` | `index,follow` (if $\ge 2$ reviewed)<br>`noindex,follow` (if $< 2$ reviewed) | `<tag-id>` is lowercase ASCII kebab-case. Emits `index,follow` only when language has $\ge 2$ reviewed recipes carrying the tag; otherwise `noindex,follow` and omitted from `sitemap.xml` (`TAG_THIN_PAGE`). Renamed tags emit static 301 stubs (`TAG_ALIAS_INTEGRITY`). |
+| **Search & Facets** | `/cs/hledani/` | `/en/search/` | `noindex,nofollow` | Search input, multi-facet filtering, empty state. Emits `noindex,nofollow` to prevent search engine crawl budget waste across facet query permutations. `robots.txt` disallows `?*` query permutations. |
 | **Collection (Bulk)** | `/cs/kolekce/` | `/en/collection/` | `noindex,follow` | Client-assembled cookbook binder. State keyed by `?r=<uid1>,<uid2>,...`. |
 | **Collection Print** | `/cs/kolekce/tisk/` | `/en/collection/print/` | `noindex,follow` | Multi-recipe continuous paged A4 printout with table of contents. Keyed by `?r=<uid1>,<uid2>,...`. |
 | **Glossary Index** | `/cs/slovnik/` | `/en/glossary/` | `index,follow` | A–Z culinary dictionary index (*Slovník pojmů*). |
@@ -197,16 +197,25 @@ All URL query parameter keys, query enum values, and step fragment identifiers a
 |---|---|---|
 | `yield` | `^[0-9]+(\.[0-9]+)?$` (e.g. `?yield=6`) | Target scaled recipe yield. |
 | `unit` | `'metric' \| 'imperial'` | Display measurement system toggle. |
-| `variant` | `^[a-z0-9]+(-[a-z0-9]+)*$` (e.g. `?variant=vegetarian`) | Selected recipe variant ID. |
+| `variant` | `^[a-z0-9]+(-[a-z0-9]+)*$` (e.g. `?variant=cheddar-mornay`) | Selected recipe variant ID. |
 | `mode` | `'cook'` | Activates cooking view mode. |
-| `q` | UTF-8 search query | Search text query. |
-| `tag` | Controlled kebab-case `tag-id` | Filter by tag. |
-| `category` | Controlled vocabulary (`sauce`, `main`, etc.) | Filter by category. |
-| `difficulty` | `'easy' \| 'medium' \| 'hard'` | Filter by difficulty rating. |
-| `allergen_not` | EU 1169/2011 allergen slug (e.g. `gluten`) | Exclusion filter for allergens. |
-| `sort` | `'time' \| 'title'` | Result ordering. |
+| `q` | UTF-8 search query (clamped $\le 64$ chars, control chars stripped) | Search text query. |
+| `category` | `^[a-z0-9-]+(,[a-z0-9-]+)*$` (e.g. `?category=sauce,soup`) | Filter by taxonomy category (OR within facet). |
+| `cuisine` | `^[a-z0-9-]+(,[a-z0-9-]+)*$` (e.g. `?cuisine=french,czech`) | Filter by taxonomy cuisine (OR within facet). |
+| `tag` | `^[a-z0-9-]+(,[a-z0-9-]+)*$` (e.g. `?tag=quick,comfort-food`) | Filter by taxonomy tags (AND within facet). |
+| `diet` | `^[a-z0-9-]+(,[a-z0-9-]+)*$` (e.g. `?diet=gluten-free,vegan`) | Filter by taxonomy diets (AND within facet). |
+| `difficulty` | `^(easy\|medium\|hard)(,(easy\|medium\|hard))*$` | Filter by difficulty rating (OR within facet). |
+| `max_time` | `^[0-9]{1,4}$` (e.g. `?max_time=30`) | Upper bound on `total_minutes` (`prep + cook + rest`). |
+| `allergen_not` | `^[a-z0-9-]+(,[a-z0-9-]+)*$` (e.g. `?allergen_not=gluten,milk`) | Allergen exclusion filter (AND exclusion). |
+| `food` | `^[a-z0-9-]+(,[a-z0-9-]+)*$` (e.g. `?food=butter,onion`) | Required food inclusion filter (AND inclusion). |
+| `include_unverified` | `'1'` (presence-only flag; omitted by default) | Include unverified recipes in search results. Default omitted = false. |
+| `sort` | `'default' \| 'time' \| 'title' \| 'difficulty' \| 'newest'` | Result ordering. Explicit non-default sort overrides relevance. |
 | `r` | Comma-separated 6-char UIDs (`k8m2x9,p4w9x2`) | Collection recipe list. |
 | `#step-<id>` | `id` matches `steps[].id` in `recipe.yaml` | Focus DOM anchor for step. |
+
+#### Cross-Lingual Search State Preservation (`?q=...`)
+While numeric and enum parameters forward cleanly across languages, free-text search `?q=...` could naively fail when switching from `/cs/hledani/?q=omáčka` to `/en/search/`. To ensure zero lost state on search routes:
+The search engine's static index (`search-index.<lang>.json`) stores deduplicated, pre-folded text tokens for **both** languages on every recipe entry (`folded.title`, `folded.summary`, `folded.tags`, `folded.search_aliases`, and food aliases from `data/foods.yaml`). Consequently, free-text queries like `?q=omacka` or `?q=mouka` match their counterparts losslessly when toggling `#lang-switch` between `/cs/hledani/` and `/en/search/`.
 
 #### Progressive Language Switch Handler
 Because query parameters and step IDs are identical across languages (guaranteed by ADR-0002 and ADR-0006 structural language parity), switching languages preserves the complete kitchen context.
@@ -287,6 +296,8 @@ To guarantee 100% SEO integrity, Culinary Spec links metadata strictly across pu
    - The `<link rel="canonical">` always points to the clean, parameter-free canonical URL:
      `<link rel="canonical" href="${SITE_ORIGIN}${BASE_PATH}/${lang}/recepty/<uid>-<slug>/">`.
    - URL parameters (`?yield=...`, `?mode=cook`) never pollute the canonical link tag.
+4. **Search Routes Robots Policy**:
+   - Search routes (`/cs/hledani/` and `/en/search/`) must strictly emit `<meta name="robots" content="noindex,nofollow">` to protect crawl budget across search facet permutations (`HREFLANG_SEO_PARITY`, Exit 1).
 
 ---
 
@@ -305,11 +316,13 @@ The verification harness (`mise run verify`) validates route generation, link co
 | `SHORTLINK_EMISSION` | Error (Exit 1) | For every recipe with a published language, a static redirect stub exists at `/<lang>/<section>/<uid>/index.html` pointing to current canonical. |
 | `SLUG_ALIAS_INTEGRITY` | Error (Exit 1) | Every entry in `slug_aliases` emits a static redirect stub to the current canonical URL. No duplicate alias across different recipes. |
 | `LANG_SWITCH_TARGET_INTEGRITY` | Error (Exit 1) | Every page's `#lang-switch` link points to a valid generated counterpart URL or carries `aria-disabled="true"` with fallback link to home. |
-| `CANONICAL_PARAM_KEYS` | Error (Exit 1) | All client query parameters and step fragment IDs adhere strictly to the ASCII vocabulary (`yield`, `unit`, `variant`, `mode`, `q`, `tag`, `category`, `difficulty`, `allergen_not`, `sort`, `r`). No localized param names. |
-| `HREFLANG_SEO_PARITY` | Error (Exit 1) | `hreflang` tags and `sitemap.xml` entries are generated if and only if target pages have `state == 'reviewed'`. Zero `hreflang` links to `unverified` or `draft` pages. |
+| `CANONICAL_PARAM_KEYS` | Error (Exit 1) | All client query parameters and step fragment IDs adhere strictly to the expanded ASCII vocabulary (`yield`, `unit`, `variant`, `mode`, `q`, `category`, `cuisine`, `tag`, `diet`, `difficulty`, `max_time`, `allergen_not`, `food`, `include_unverified`, `sort`, `r`). Validated against strict regex syntax with comma-separated multi-values. No localized param names. |
+| `TAG_ALIAS_INTEGRITY` | Error (Exit 1) | Deprecated tag IDs in `data/taxonomy.yaml` emit static 301 HTML redirect stubs under `/<lang>/stitky/<old-id>/` and `/<lang>/tags/<old-id>/` pointing to replacement canonical tag URLs. |
+| `TAG_THIN_PAGE` | Error (Exit 1) | Tag pages with $< 2$ reviewed recipes in that language emit `<meta name="robots" content="noindex,follow">` and are excluded from `sitemap.xml`. |
+| `HREFLANG_SEO_PARITY` | Error (Exit 1) | `hreflang` tags and `sitemap.xml` entries are generated if and only if target pages have `state == 'reviewed'`. Zero `hreflang` links to `unverified` or `draft` pages. Also verifies that search routes (`/cs/hledani/` and `/en/search/`) emit `<meta name="robots" content="noindex,nofollow">`. |
 | `RESCUE_404_MAP` | Error (Exit 1) | `404.html` contains an exhaustive lookup table mapping every corpus `<uid>` to its active canonical slug per language. |
 
-### 2. Required Mutants under `tests/corpus/mutants/`
+### 2. Representative Mutants (see ADR-0008 §5 for the complete 54-mutant matrix)
 
 `mise run verify` must fail if any of the following regression mutants pass or are missing:
 
