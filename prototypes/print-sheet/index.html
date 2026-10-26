@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Culinary Spec — print sheet prototype</title>
+<style>
+  :root {
+    --ink: #14110e;
+    --ink-soft: #5b534c;
+    --ink-faint: #8d857d;
+    --rule: #cfc8c0;
+    --rule-soft: #e6e0d9;
+    --paper: #fffdfa;
+    --desk: #6f6a64;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --sheet-w: 210mm;
+    --sheet-h: 297mm;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--desk);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 16px;
+  }
+
+  /* ---------- controls (screen only) ---------- */
+  .controls {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem .75rem;
+    align-items: center;
+    padding: .6rem .9rem;
+    background: #1d1a17;
+    color: #efeae4;
+    font-family: var(--sans);
+    font-size: .8rem;
+  }
+  .controls .group { display: flex; gap: .25rem; align-items: center; }
+  .controls .label { color: #9d968e; text-transform: uppercase; letter-spacing: .08em; font-size: .65rem; }
+  .controls button {
+    font: inherit;
+    color: inherit;
+    background: #2c2823;
+    border: 1px solid #423c35;
+    border-radius: 999px;
+    padding: .25rem .6rem;
+    cursor: pointer;
+  }
+  .controls button[aria-pressed="true"] { background: #f3ede5; color: #1d1a17; border-color: #f3ede5; }
+  .controls button:focus-visible { outline: 2px solid #f0c987; outline-offset: 2px; }
+
+  /* ---------- sheets ---------- */
+  #doc { display: flex; flex-direction: column; align-items: center; gap: 12mm; padding: 10mm 0 20mm; }
+
+  .sheet {
+    width: var(--sheet-w);
+    min-height: var(--sheet-h);
+    background: var(--paper);
+    padding: 18mm 18mm 20mm;
+    position: relative;
+    box-shadow: 0 2px 14px rgba(0,0,0,.35);
+  }
+
+  .sheet::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 .4pt var(--rule-soft);
+  }
+
+  /* running head, repeated on every printed page */
+  .rh {
+    display: none;
+    font-family: var(--sans);
+    font-size: 7.5pt;
+    letter-spacing: .04em;
+    color: var(--ink-faint);
+  }
+
+  /* ---------- type scale ---------- */
+  h1, h2, h3 { font-weight: 600; margin: 0; text-wrap: balance; }
+  .doc-title { font-size: 30pt; line-height: 1.05; letter-spacing: -.01em; }
+  .doc-sub { font-family: var(--sans); font-size: 9pt; color: var(--ink-soft); margin-top: 4mm; }
+  .recipe-title { font-size: 22pt; line-height: 1.1; letter-spacing: -.005em; }
+  .recipe-summary { font-size: 10.5pt; line-height: 1.45; color: var(--ink-soft); margin: 3mm 0 0; max-width: 108mm; }
+  .meta { font-family: var(--sans); font-size: 8pt; color: var(--ink-faint); letter-spacing: .04em; margin-top: 3mm; }
+  .section-label {
+    font-family: var(--sans); font-size: 7.5pt; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-faint); margin: 0 0 2mm;
+  }
+  .phase-label { font-family: var(--sans); font-size: 8pt; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  .rule-top { border-top: .6pt solid var(--ink); padding-top: 3mm; margin-top: 8mm; }
+  .small { font-size: 8.5pt; color: var(--ink-soft); }
+
+  /* ---------- ingredient list (paragraph grammar) ---------- */
+  .ingredients { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8mm; margin: 0; padding: 0; list-style: none; }
+  .ingredients li { display: flex; gap: 2mm; align-items: baseline; padding: 1.2mm 0; border-bottom: .3pt solid var(--rule-soft); }
+  .amt { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; white-space: nowrap; }
+  .amt { min-width: 20mm; }
+  .food-note { color: var(--ink-soft); font-size: 9pt; }
+  .opt { color: var(--ink-faint); font-size: 8.5pt; }
+
+  /* ---------- steps ---------- */
+  .step { display: grid; grid-template-columns: 7mm 1fr; gap: 0 3mm; padding: 3mm 0; border-top: .3pt solid var(--rule-soft); break-inside: avoid; }
+  .step:first-of-type { border-top: 0; }
+  .step-no { font-family: var(--sans); font-size: 8pt; color: var(--ink-faint); font-variant-numeric: tabular-nums; padding-top: .8mm; }
+  .step-body p { margin: 0; font-size: 10.5pt; line-height: 1.5; }
+  .chips { font-family: var(--sans); font-size: 8pt; color: var(--ink-soft); margin-bottom: 1.2mm; display: flex; flex-wrap: wrap; gap: 0 2.5mm; }
+  .chips span::after { content: " ·"; color: var(--rule); }
+  .chips span:last-child::after { content: ""; }
+
+  /* ---------- phase rail ---------- */
+  .rail-phase { break-inside: avoid; padding: 3mm 0; border-top: .3pt solid var(--rule-soft); }
+  .rail-phase:first-of-type { border-top: 0; }
+  .rail-head { display: flex; align-items: baseline; gap: 3mm; margin-bottom: 2mm; }
+  .rail-head .idx { font-family: var(--sans); font-size: 8pt; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .rail-body { display: grid; grid-template-columns: 44mm 1fr; gap: 0 6mm; }
+  .rail-amounts { margin: 0; padding: 0; list-style: none; font-size: 9pt; }
+  .rail-amounts li { display: flex; gap: 2mm; padding: .8mm 0; border-bottom: .3pt solid var(--rule-soft); }
+  .rail-prose p { margin: 0 0 2mm; font-size: 10.5pt; line-height: 1.5; }
+
+  /* ---------- matrix table ---------- */
+  .matrix-wrap { margin-top: 6mm; }
+  table.matrix { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.5pt; }
+  table.matrix th, table.matrix td { border: .4pt solid var(--rule); padding: 1.6mm 1.4mm; vertical-align: middle; text-align: left; }
+  table.matrix th { font-family: var(--sans); font-weight: 600; font-size: 7pt; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); }
+  table.matrix td.step { font-family: var(--sans); font-size: 7.5pt; line-height: 1.3; color: var(--ink); padding: 1.1mm 1.2mm; }
+  table.matrix td.ing { font-size: 8.5pt; }
+  table.matrix tr { break-inside: avoid; }
+  table.matrix td.blank { background: repeating-linear-gradient(135deg, transparent 0 3px, rgba(0,0,0,.03) 3px 4px); }
+
+  /* ---------- cover / TOC ---------- */
+  .cover { display: flex; flex-direction: column; justify-content: space-between; min-height: 235mm; }
+  .cover-mark { font-family: var(--sans); font-size: 8pt; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-faint); }
+  .toc { margin: 8mm 0 0; padding: 0; list-style: none; font-size: 10.5pt; }
+  .toc li { display: flex; align-items: baseline; gap: 2mm; padding: 1.6mm 0; border-bottom: .3pt solid var(--rule-soft); }
+  .toc .t { flex: 0 1 auto; }
+  .toc .dots { flex: 1 1 auto; border-bottom: .4pt dotted var(--rule); transform: translateY(-1mm); }
+  .toc .folio { font-variant-numeric: tabular-nums; font-family: var(--sans); font-size: 9pt; color: var(--ink-soft); }
+  .notice { font-size: 8.5pt; color: var(--ink-soft); line-height: 1.45; border-top: .6pt solid var(--ink); padding-top: 3mm; }
+
+  /* ---------- print ---------- */
+  @page { size: A4; margin: 18mm 18mm 20mm; }
+
+  @media print {
+    :root { --paper: #fff; }
+    body { background: #fff; font-size: 10.5pt; }
+    .controls { display: none !important; }
+    #doc { display: block; padding: 0; gap: 0; }
+    .sheet {
+      width: auto; min-height: 0; padding: 0; box-shadow: none;
+      break-after: page;
+    }
+    .sheet:last-child { break-after: auto; }
+    .sheet::after { display: none; }
+    .rh { display: flex; justify-content: space-between; position: fixed; top: -11mm; left: 0; right: 0; }
+    .runhead-bottom { position: fixed; bottom: -13mm; left: 0; right: 0; display: flex; justify-content: space-between;
+      font-family: var(--sans); font-size: 7.5pt; color: var(--ink-faint); }
+    h1, h2, .phase-label { break-after: avoid; }
+    .ingredients li { break-inside: avoid; }
+    .matrix-wrap { break-before: auto; }
+    a { color: inherit; text-decoration: none; }
+  }
+
+  .screen-note { max-width: 174mm; font-family: var(--sans); font-size: .75rem; color: #d9d2ca; margin: 0 auto 4mm; }
+</style>
+</head>
+<body>
+
+<div class="controls" role="group" aria-label="Prototype controls">
+  <span class="label">Grammar</span>
+  <div class="group" role="group" aria-label="Layout">
+    <button data-grammar="paragraph" aria-pressed="true">Paragraph</button>
+    <button data-grammar="rail" aria-pressed="false">Phase rail</button>
+    <button data-grammar="table" aria-pressed="false">Matrix</button>
+  </div>
+  <span class="label">Language</span>
+  <div class="group" role="group" aria-label="Language">
+    <button data-lang="cs" aria-pressed="true">CZ</button>
+    <button data-lang="en" aria-pressed="false">EN</button>
+  </div>
+  <span class="label">Yield</span>
+  <div class="group" role="group" aria-label="Yield">
+    <button data-servings="2" aria-pressed="false">2</button>
+    <button data-servings="4" aria-pressed="true">4</button>
+    <button data-servings="8" aria-pressed="false">8</button>
+  </div>
+  <span class="label">Recipe</span>
+  <div class="group" role="group" aria-label="Recipe">
+    <button data-recipe="mornay-sauce" aria-pressed="true">Mornay</button>
+    <button data-recipe="svickova" aria-pressed="false">Svíčková</button>
+  </div>
+</div>
+
+<p class="screen-note">Print preview is A4 with 18&nbsp;mm margins. Use ⌘P / Ctrl&nbsp;P and enable background graphics to compare with the on-screen sheets.</p>
+
+<div id="doc"></div>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ *
+ *  Units — a miniature of ADR-0004: authored forms, PluralRules slot,
+ *  magnitude rounding, no library, no Intl unit names.
+ * ------------------------------------------------------------------ */
+const UNITS = {
+  g:      { dim: "mass",   factor: 1,    cs: { one: "gram",     few: "gramy",      many: "gramu",     other: "gramů" },  en: { one: "gram", other: "grams" } },
+  kg:     { dim: "mass",   factor: 1000, cs: { one: "kilogram", few: "kilogramy",  many: "kilogramu", other: "kilogramů" }, en: { one: "kilogram", other: "kilograms" } },
+  ml:     { dim: "volume", factor: 1,    cs: { one: "mililitr", few: "mililitry",  many: "mililitru", other: "mililitrů" }, en: { one: "millilitre", other: "millilitres" } },
+  l:      { dim: "volume", factor: 1000, cs: { one: "litr",     few: "litry",      many: "litru",     other: "litrů" },  en: { one: "litre", other: "litres" } },
+  lzice:  { dim: "volume", factor: 15,   eighth: true, cs: { one: "lžíce", few: "lžíce", many: "lžíce", other: "lžic" }, en: { one: "tablespoon", other: "tablespoons" } },
+  lzicka: { dim: "volume", factor: 5,    eighth: true, cs: { one: "lžička", few: "lžičky", many: "lžičky", other: "lžiček" }, en: { one: "teaspoon", other: "teaspoons" } },
+  spetka: { dim: "mass",   factor: 1,    vague: true,  cs: { one: "špetka", few: "špetky", many: "špetky", other: "špetek" }, en: { one: "pinch", other: "pinches" } },
+  piece:  { dim: "count",  factor: 1,    count: true }
+};
+
+const FOODS = {
+  butter:    { cs: { one: "máslo", few: "másla", many: "másla", other: "másla" }, en: { one: "butter" } },
+  "flour-all-purpose": { cs: { one: "hladká mouka", few: "hladké mouky", many: "hladké mouky", other: "hladké mouky" }, en: { one: "all-purpose flour" } },
+  "milk-whole": { cs: { one: "plnotučné mléko", few: "plnotučná mléka", many: "plnotučného mléka", other: "plnotučného mléka" }, en: { one: "whole milk" } },
+  "cheese-gruyere": { cs: { one: "sýr Gruyère", few: "sýry Gruyère", many: "sýra Gruyère", other: "sýra Gruyère" }, en: { one: "Gruyère" } },
+  nutmeg:    { cs: { one: "muškátový oříšek", few: "muškátové oříšky", many: "muškátového oříšku", other: "muškátového oříšku" }, en: { one: "nutmeg" } },
+  salt:      { cs: { one: "sůl", few: "soli", many: "soli", other: "soli" }, en: { one: "salt" } },
+  egg:       { cs: { one: "žloutek", few: "žloutky", many: "žloutku", other: "žloutků" }, en: { one: "egg yolk", other: "egg yolks" } },
+  beef:      { cs: { one: "hovězí kýta", few: "hovězí kýty", many: "hovězí kýty", other: "hovězí kýty" }, en: { one: "beef round" } },
+  lard:      { cs: { one: "sádlo", few: "sádla", many: "sádla", other: "sádla" }, en: { one: "lard" } },
+  onion:     { cs: { one: "cibule", few: "cibule", many: "cibule", other: "cibulí" }, en: { one: "onion", other: "onions" } },
+  carrot:    { cs: { one: "mrkev", few: "mrkve", many: "mrkve", other: "mrkví" }, en: { one: "carrot", other: "carrots" } },
+  celeriac:  { cs: { one: "celer", few: "celery", many: "celeru", other: "celeru" }, en: { one: "celeriac" } },
+  allspice:  { cs: { one: "nové koření", few: "nová koření", many: "nového koření", other: "nového koření" }, en: { one: "allspice berry", other: "allspice berries" } },
+  bay:       { cs: { one: "bobkový list", few: "bobkové listy", many: "bobkového listu", other: "bobkových listů" }, en: { one: "bay leaf", other: "bay leaves" } },
+  cream:     { cs: { one: "smetana 33 %", few: "smetany 33 %", many: "smetany 33 %", other: "smetany 33 %" }, en: { one: "double cream" } },
+  sugar:     { cs: { one: "cukr", few: "cukru", many: "cukru", other: "cukru" }, en: { one: "sugar" } },
+  vinegar:   { cs: { one: "ocet", few: "octy", many: "octa", other: "octa" }, en: { one: "vinegar" } },
+  dumplings: { cs: { one: "houskový knedlík", few: "houskové knedlíky", many: "houskového knedlíku", other: "houskových knedlíků" }, en: { one: "bread dumpling", other: "bread dumplings" } },
+  cranberries: { cs: { one: "brusinky", few: "brusinky", many: "brusinek", other: "brusinek" }, en: { one: "cranberry preserve" } }
+};
+
+const nf = (lang) => new Intl.NumberFormat(lang === "cs" ? "cs-CZ" : "en-GB", { maximumFractionDigits: 2 });
+const EIGHTHS = ["", "⅛", "¼", "⅜", "½", "⅝", "¾", "⅞"];
+const NBSP = "\u00A0";
+
+function category(lang, n) {
+  const c = new Intl.PluralRules(lang === "cs" ? "cs" : "en").select(n);
+  return c === "one" || c === "few" || c === "many" ? c : "other";
+}
+
+function roundFor(unit, n) {
+  const spec = UNITS[unit];
+  if (!spec) return n;
+  if (spec.eighth) return Math.round(n * 8) / 8;
+  if (spec.count) return Math.round(n);
+  const a = Math.abs(n);
+  const q = a < 10 ? 0.5 : a < 50 ? 1 : a < 200 ? 5 : a < 1000 ? 10 : 25;
+  return Math.max(q, Math.round(n / q) * q);
+}
+
+function numberText(lang, unit, n) {
+  if (UNITS[unit] && UNITS[unit].eighth) {
+    const whole = Math.floor(n + 1e-9);
+    const e = Math.round((n - whole) * 8);
+    if (e === 8) return String(whole + 1);
+    if (e === 0) return String(whole);
+    return (whole ? whole + " " : "") + EIGHTHS[e];
+  }
+  return nf(lang).format(n);
+}
+
+function unitText(lang, unit, n) {
+  const spec = UNITS[unit];
+  const forms = spec[lang] || spec.en;
+  const slot = category(lang, n);
+  return forms[slot] || forms.other || forms.one;
+}
+
+function foodText(lang, food, n, unit) {
+  const entry = FOODS[food] || { cs: { one: food }, en: { one: food } };
+  const forms = entry[lang] || entry.en;
+  if (UNITS[unit] && UNITS[unit].count) {
+    const slot = category(lang, n);
+    return forms[slot] || forms.other || forms.one;
+  }
+  return forms.one;
+}
+
+function amountText(lang, instance) {
+  const n = roundFor(instance.unit, instance.scaled);
+  const unit = UNITS[instance.unit];
+  if (unit && unit.count) return numberText(lang, instance.unit, n) + NBSP + foodText(lang, instance.food, n, instance.unit);
+  return numberText(lang, instance.unit, n) + NBSP + unitText(lang, instance.unit, n);
+}
+
+// lead = the bold quantity (and its unit word), rest = the food name.
+// Counts carry the food name in the plural slot, so they must not be doubled.
+function leadRest(lang, instance) {
+  const n = roundFor(instance.unit, instance.scaled);
+  const unit = UNITS[instance.unit];
+  if (unit && unit.count) {
+    return { lead: numberText(lang, instance.unit, n), rest: foodText(lang, instance.food, n, instance.unit) };
+  }
+  return { lead: numberText(lang, instance.unit, n) + NBSP + unitText(lang, instance.unit, n), rest: foodText(lang, instance.food, 1, "piece") };
+}
+
+function ingredientLine(lang, instance) {
+  const { lead, rest } = leadRest(lang, instance);
+  const note = instance.note && instance.note[lang] ? ` (${instance.note[lang]})` : "";
+  const optional = instance.optional ? (lang === "cs" ? " · volitelné" : " · optional") : "";
+  return `${lead} ${rest}${note}${optional}`;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Recipes — the shape of ADR-0006, reduced to what print needs.
+ * ------------------------------------------------------------------ */
+const RECIPES = [
+  {
+    id: "mornay-sauce",
+    uid: "k8m2x9",
+    title: { cs: "Omáčka Mornay", en: "Mornay Sauce" },
+    summary: {
+      cs: "Klasická francouzská sýrová omáčka na bázi bešamelu obohacená žloutkem a sýrem Gruyère.",
+      en: "A classic French cheese sauce built on a silky béchamel base, enriched with egg yolk and Gruyère."
+    },
+    yieldLabel: { cs: "porce", en: "servings" },
+    yieldBase: 4,
+    meta: { cs: "10 min příprava · 15 min vaření · střední", en: "10 min prep · 15 min cook · medium" },
+    prep: [
+      { cs: "Připravte si všechny suroviny odvážené a nakrájené.", en: "Weigh and cut every ingredient before heat." }
+    ],
+    ingredients: [
+      { id: "butter",  food: "butter", amount: 30,  unit: "g", scaling: "linear", step: "roux" },
+      { id: "flour",   food: "flour-all-purpose", amount: 30, unit: "g", scaling: "linear", step: "roux" },
+      { id: "milk",    food: "milk-whole", amount: 500, unit: "ml", scaling: "linear", step: "bechamel",
+        note: { cs: "zahřáté na 60 °C", en: "warmed to 60 °C" } },
+      { id: "yolk",    food: "egg", amount: 1, unit: "piece", scaling: "linear", step: "enrich",
+        note: { cs: "pouze žloutek, pokojová teplota", en: "yolk only, room temperature" } },
+      { id: "gruyere", food: "cheese-gruyere", amount: 100, unit: "g", scaling: "linear", step: "finish",
+        note: { cs: "jemně nastrouhaný", en: "finely grated" } },
+      { id: "nutmeg",  food: "nutmeg", amount: 1, unit: "spetka", scaling: "fixed", optional: true, step: "finish" },
+      { id: "salt",    food: "salt", amount: 2, unit: "g", scaling: "taste", step: "finish" }
+    ],
+    phases: [
+      { id: "base",    label: { cs: "Základ", en: "Base" },       steps: ["roux", "bechamel"] },
+      { id: "enrich",  label: { cs: "Zjemnění", en: "Enrich" },   steps: ["enrich"] },
+      { id: "finish",  label: { cs: "Dokončení", en: "Finish" },  steps: ["finish"] }
+    ],
+    steps: [
+      { id: "roux", label: { cs: "Jíška", en: "Roux" },
+        consumes: { ingredients: ["butter", "flour"] },
+        text: {
+          cs: "Máslo rozpusťte v těžkém kastrolu na středně nízkém ohni. Přisypte mouku a míchejte metličkou dvě minuty, dokud jíška nezapění a nezíská světle blond barvu.",
+          en: "Melt the butter in a heavy saucepan over medium-low heat. Add the flour and whisk for two minutes, until the roux foams and turns pale blond."
+        } },
+      { id: "bechamel", label: { cs: "Bešamel", en: "Béchamel" },
+        consumes: { ingredients: ["milk"], steps: ["roux"] },
+        text: {
+          cs: "Za stálého šlehání vlijte teplé mléko po částech do jíšky, aby nevznikly hrudky. Přiveďte k jemnému varu a vařte pět minut, dokud omáčka nezhoustne na šlem.",
+          en: "Whisking constantly, pour the warm milk into the roux in stages so no lumps form. Bring to a gentle simmer and cook for five minutes, until the sauce coats the back of a spoon."
+        } },
+      { id: "enrich", label: { cs: "Žloutek", en: "Yolk" },
+        consumes: { ingredients: ["yolk"], steps: ["bechamel"] },
+        text: {
+          cs: "Kastrol odstavte z ohně. Žloutek rozšlehejte s trochou horké omáčky a vraťte ho do kastrolu; již nevařte.",
+          en: "Take the pan off the heat. Beat the yolk with a little of the hot sauce and return it to the pan; do not boil again."
+        } },
+      { id: "finish", label: { cs: "Sýr a koření", en: "Cheese and seasoning" },
+        consumes: { ingredients: ["gruyere", "nutmeg", "salt"], steps: ["enrich"] },
+        text: {
+          cs: "Vmíchejte nastrouhaný sýr po dvou dávkách, aby se emulze nerozpadla. Dochuťte čerstvě strouhaným muškátem a solí a podávejte ihned.",
+          en: "Fold in the grated cheese in two batches so the emulsion holds. Season with freshly grated nutmeg and salt, and serve at once."
+        } }
+    ]
+  },
+  {
+    id: "svickova",
+    uid: "m3r7ta",
+    title: { cs: "Svíčková na smetaně", en: "Beef in Cream Sauce" },
+    summary: {
+      cs: "Hovězí kýta dušená s kořenovou zeleninou, podávaná s houskovým knedlíkem a brusinkami.",
+      en: "Beef round braised with root vegetables, served with bread dumplings and cranberry preserve."
+    },
+    yieldLabel: { cs: "porce", en: "servings" },
+    yieldBase: 4,
+    meta: { cs: "20 min příprava · 110 min vaření · střední", en: "20 min prep · 110 min cook · medium" },
+    prep: [
+      { cs: "Předehřejte troubu na 170 °C.", en: "Heat the oven to 170 °C." },
+      { cs: "Připravte si vodu na knedlíky.", en: "Put water on for the dumplings." }
+    ],
+    ingredients: [
+      { id: "beef",    food: "beef", amount: 800, unit: "g", scaling: "linear", step: "sear" },
+      { id: "lard",    food: "lard", amount: 2, unit: "lzice", scaling: "linear", step: "sear" },
+      { id: "onion",   food: "onion", amount: 1, unit: "piece", scaling: "linear", step: "aromatics" },
+      { id: "carrot",  food: "carrot", amount: 2, unit: "piece", scaling: "linear", step: "aromatics" },
+      { id: "celeriac", food: "celeriac", amount: 100, unit: "g", scaling: "linear", step: "aromatics" },
+      { id: "allspice", food: "allspice", amount: 4, unit: "piece", scaling: "linear", step: "aromatics" },
+      { id: "bay",     food: "bay", amount: 2, unit: "piece", scaling: "linear", step: "aromatics" },
+      { id: "flour",   food: "flour-all-purpose", amount: 2, unit: "lzice", scaling: "linear", step: "thicken" },
+      { id: "cream",   food: "cream", amount: 200, unit: "ml", scaling: "linear", step: "thicken" },
+      { id: "sugar",   food: "sugar", amount: 1, unit: "lzicka", scaling: "taste", step: "season" },
+      { id: "vinegar", food: "vinegar", amount: 1, unit: "lzice", scaling: "taste", step: "season" },
+      { id: "dumplings", food: "dumplings", amount: 8, unit: "piece", scaling: "linear", step: "serve" },
+      { id: "cranberries", food: "cranberries", amount: 2, unit: "lzice", scaling: "linear", step: "serve" }
+    ],
+    phases: [
+      { id: "meat",  label: { cs: "Maso", en: "The meat" },        steps: ["sear", "aromatics", "braise"] },
+      { id: "sauce", label: { cs: "Omáčka", en: "The sauce" },     steps: ["strain", "thicken", "season"] },
+      { id: "serve", label: { cs: "Podáváme", en: "To serve" },    steps: ["serve"] }
+    ],
+    steps: [
+      { id: "sear", label: { cs: "Opečení", en: "Sear" }, consumes: { ingredients: ["beef", "lard"] },
+        text: {
+          cs: "Maso osolte, opepřete a zprudka opečte ze všech stran na sádle dohněda. Potřebujete barvu, ne propečení.",
+          en: "Salt and pepper the beef and sear it hard on all sides in the lard until deeply browned. You want colour, not doneness."
+        } },
+      { id: "aromatics", label: { cs: "Zelenina a koření", en: "Vegetables and spice" }, consumes: { ingredients: ["onion", "carrot", "celeriac", "allspice", "bay"] },
+        text: {
+          cs: "Přidejte nadrobno nakrájenou cibuli, mrkev a celer, celé nové koření a bobkový list. Podlijte vodou tak, aby maso bylo do poloviny ponořené.",
+          en: "Add the finely chopped onion, carrot and celeriac, the whole allspice and the bay leaves. Pour in water to come halfway up the meat."
+        } },
+      { id: "braise", label: { cs: "Duštění", en: "Braise" }, consumes: { steps: ["aromatics"] },
+        text: {
+          cs: "Přiklopte a duste v troubě při 170 °C doměkka, zhruba devadesát minut. Maso musí jít krájet lžící.",
+          en: "Cover and braise in the oven at 170 °C until tender, about ninety minutes. The meat should yield to a spoon."
+        } },
+      { id: "strain", label: { cs: "Přecedění", en: "Strain" }, consumes: { steps: ["braise"] },
+        text: {
+          cs: "Maso vyjměte a udržujte teplé. Šťávu přeceďte, zeleninu rozmixujte dohladka a vše spojte.",
+          en: "Lift out the meat and keep it warm. Strain the juices, blend the vegetables smooth, and combine."
+        } },
+      { id: "thicken", label: { cs: "Zahuštění", en: "Thicken" }, consumes: { ingredients: ["flour", "cream"], steps: ["strain"] },
+        text: {
+          cs: "Zaprašte moukou, přidejte smetanu a povařte pět minut, dokud omáčka nezhoustne. Průběžně míchejte.",
+          en: "Dust with the flour, add the cream, and simmer for five minutes until the sauce thickens. Stir as it cooks."
+        } },
+      { id: "season", label: { cs: "Dochucení", en: "Season" }, consumes: { ingredients: ["sugar", "vinegar"] },
+        text: {
+          cs: "Dochuťte cukrem a octem po troškách, dokud není omáčka sladkokyselá. Dosolte až nakonec.",
+          en: "Balance with sugar and vinegar a little at a time until the sauce is sweet-sour. Salt last."
+        } },
+      { id: "serve", label: { cs: "Podání", en: "Serve" }, consumes: { ingredients: ["dumplings", "cranberries"] },
+        text: {
+          cs: "Krájejte maso proti vláknu, přelijte omáčkou a podávejte s nakrájeným knedlíkem a brusinkami.",
+          en: "Slice the meat across the grain, spoon over the sauce, and serve with sliced dumplings and cranberry preserve."
+        } }
+    ]
+  }
+];
+
+
+/* Matrix cells carry an authored short cue, never truncated prose: the document
+   contract gains a per-step `short` label (ADR-0006 follow-up). */
+const SHORT = {
+  "mornay-sauce": {
+    roux:     { cs: "máslo + mouka, 2 min", en: "butter + flour, 2 min" },
+    bechamel: { cs: "mléko po částech, 5 min", en: "milk in stages, 5 min" },
+    enrich:   { cs: "žloutek mimo oheň", en: "yolk off the heat" },
+    finish:   { cs: "sýr ve dvou dávkách", en: "cheese in two batches" }
+  },
+  svickova: {
+    sear:      { cs: "zprudka dohněda", en: "hard sear, brown" },
+    aromatics: { cs: "zelenina + koření", en: "vegetables + spice" },
+    braise:    { cs: "170 °C, 90 min", en: "170 °C, 90 min" },
+    strain:    { cs: "přecedit, zeleninu mixovat", en: "strain, blend the veg" },
+    thicken:   { cs: "mouka + smetana, 5 min", en: "flour + cream, 5 min" },
+    season:    { cs: "cukr + ocet", en: "sugar + vinegar" },
+    serve:     { cs: "knedlík + brusinky", en: "dumplings + cranberries" }
+  }
+};
+
+function shortCue(recipe, step, lang) {
+  const row = SHORT[recipe.id] && SHORT[recipe.id][step.id];
+  return row ? row[lang] : step.label[lang];
+}
+
+/* ------------------------------------------------------------------ *
+ *  State and scaling
+ * ------------------------------------------------------------------ */
+const state = { grammar: "paragraph", lang: "cs", servings: 4, recipe: "mornay-sauce" };
+
+// URL-driven defaults so a review link can open one exact projection:
+// ?grammar=table&lang=en&servings=8&recipe=svickova
+(function initFromQuery() {
+  const q = new URLSearchParams(location.search);
+  if (q.get("grammar")) state.grammar = q.get("grammar");
+  if (q.get("lang")) state.lang = q.get("lang");
+  if (q.get("servings")) state.servings = Number(q.get("servings"));
+  if (q.get("recipe")) state.recipe = q.get("recipe");
+})();
+
+function scaleRecipe(recipe, target) {
+  const factor = target / recipe.yieldBase;
+  const ingredients = recipe.ingredients.map((i) => {
+    let scaled = i.amount;
+    if (i.scaling === "linear") scaled = i.amount * factor;
+    if (i.scaling === "taste") scaled = i.amount * factor;
+    if (i.scaling === "fixed") scaled = i.amount;
+    return Object.assign({}, i, { scaled });
+  });
+  return { recipe, ingredients, factor };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Matrix geometry — ADR-0003: rows are instances, step cells span the
+ *  rows they consume, columns assigned greedily, laminarity checked.
+ * ------------------------------------------------------------------ */
+function buildMatrix(recipe, ingredients) {
+  const rowOf = new Map(ingredients.map((i, idx) => [i.id, idx]));
+  const stepRow = new Map();
+
+  const rowsOf = (step) => {
+    const set = new Set();
+    (step.consumes.ingredients || []).forEach((id) => { if (rowOf.has(id)) set.add(rowOf.get(id)); });
+    (step.consumes.steps || []).forEach((id) => (stepRow.get(id) || []).forEach((r) => set.add(r)));
+    if (!set.size) {
+      const prev = recipe.steps[recipe.steps.indexOf(step) - 1];
+      (stepRow.get(prev && prev.id) || []).forEach((r) => set.add(r));
+    }
+    const arr = [...set].sort((a, b) => a - b);
+    stepRow.set(step.id, arr);
+    return arr;
+  };
+
+  const blocks = recipe.steps.map((step) => ({ step, rows: rowsOf(step) }));
+
+  // laminarity: sorted blocks must be either disjoint or nested
+  let laminar = true;
+  const sorted = [...blocks].filter((b) => b.rows.length).sort((a, b) => a.rows[0] - b.rows[0]);
+  for (let i = 0; i < sorted.length; i++) {
+    for (let j = i + 1; j < sorted.length; j++) {
+      const a = sorted[i].rows, b = sorted[j].rows;
+      const aStart = a[0], aEnd = a[a.length - 1], bStart = b[0], bEnd = b[b.length - 1];
+      if (bStart > aEnd) continue;
+      const aContainsB = aStart <= bStart && bEnd <= aEnd;
+      const bContainsA = bStart <= aStart && aEnd <= bEnd;
+      if (!aContainsB && !bContainsA) laminar = false;
+    }
+  }
+
+  // one column per step, in document order: time reads left to right, which is
+  // what the reference product does and why a 20-step recipe runs out of width.
+  let col = 0;
+  blocks.forEach((block) => {
+    if (!block.rows.length) return;
+    block.col = col++;
+  });
+
+  return { blocks, columns: Math.max(col, 1), laminar, rowOf };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Renderers
+ * ------------------------------------------------------------------ */
+const $ = (sel) => document.querySelector(sel);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function chipsHtml(lang, recipe, ingredients) {
+  const names = [];
+  recipe.currentStepIngredients = null;
+  return names;
+}
+
+function renderParagraph(scaled) {
+  const { recipe, ingredients } = scaled;
+  const lang = state.lang;
+  const ingredientItems = ingredients.map((i) => {
+    const { lead, rest } = leadRest(lang, i);
+    const note = i.note && i.note[lang] ? `<span class="food-note"> (${esc(i.note[lang])})</span>` : "";
+    const optional = i.optional ? `<span class="opt">${lang === "cs" ? " · volitelné" : " · optional"}</span>` : "";
+    return `<li><span class="amt">${esc(lead)}</span><span>${esc(rest)}${note}${optional}</span></li>`;
+  }).join("");
+
+  const steps = recipe.steps.map((step, idx) => {
+    const consumed = (step.consumes.ingredients || []).map((id) => ingredients.find((i) => i.id === id)).filter(Boolean);
+    const chips = consumed.map((i) => `<span>${esc(ingredientLine(lang, i))}</span>`).join("");
+    return `<div class="step"><div class="step-no">${idx + 1}</div><div class="step-body">${chips ? `<div class="chips">${chips}</div>` : ""}<p>${esc(step.text[lang])}</p></div></div>`;
+  }).join("");
+
+  return `
+    <section class="sheet">
+      <p class="section-label">${lang === "cs" ? "Recept" : "Recipe"}</p>
+      <h1 class="recipe-title">${esc(recipe.title[lang])}</h1>
+      <p class="recipe-summary">${esc(recipe.summary[lang])}</p>
+      <p class="meta">${esc(recipe.meta[lang])} · ${state.servings} ${esc(recipe.yieldLabel[lang])}</p>
+      <div class="rule-top">
+        <p class="section-label">${lang === "cs" ? "Suroviny" : "Ingredients"}</p>
+        <ul class="ingredients">${ingredientItems}</ul>
+      </div>
+      ${recipe.prep && recipe.prep.length ? `<div class="rule-top"><p class="section-label">${lang === "cs" ? "Než začnete" : "Before you start"}</p><ul class="ingredients">${recipe.prep.map((p) => `<li><span>${esc(p[lang])}</span></li>`).join("")}</ul></div>` : ""}
+      <div class="rule-top">
+        <p class="section-label">${lang === "cs" ? "Postup" : "Method"}</p>
+        ${steps}
+      </div>
+      <p class="notice">${lang === "cs" ? "Množství platí pro zvolený počet porcí. Hodnoty převedené na jiné jednotky jsou označeny jako přibližné." : "Amounts apply to the selected yield. Values converted to another unit are marked approximate."}</p>
+    </section>`;
+}
+
+function renderRail(scaled) {
+  const { recipe, ingredients } = scaled;
+  const lang = state.lang;
+  const phases = recipe.phases.map((phase, pIdx) => {
+    const steps = phase.steps.map((sid) => recipe.steps.find((s) => s.id === sid)).filter(Boolean);
+    const ids = new Set();
+    steps.forEach((s) => (s.consumes.ingredients || []).forEach((id) => ids.add(id)));
+    const amounts = [...ids].map((id) => ingredients.find((i) => i.id === id)).filter(Boolean);
+    return `<section class="rail-phase">
+      <div class="rail-head"><span class="idx">${String(pIdx + 1).padStart(2, "0")}</span><span class="phase-label">${esc(phase.label[lang])}</span></div>
+      <div class="rail-body">
+        <ul class="rail-amounts">${amounts.map((i) => {
+          const { lead, rest } = leadRest(lang, i);
+          return `<li><span class="amt">${esc(lead)}</span><span>${esc(rest)}</span></li>`;
+        }).join("")}</ul>
+        <div class="rail-prose">${steps.map((s) => `<p>${esc(s.text[lang])}</p>`).join("")}</div>
+      </div>
+    </section>`;
+  }).join("");
+
+  return `
+    <section class="sheet">
+      <p class="section-label">${lang === "cs" ? "Recept · fázová lišta" : "Recipe · phase rail"}</p>
+      <h1 class="recipe-title">${esc(recipe.title[lang])}</h1>
+      <p class="recipe-summary">${esc(recipe.summary[lang])}</p>
+      <p class="meta">${esc(recipe.meta[lang])} · ${state.servings} ${esc(recipe.yieldLabel[lang])}</p>
+      <div class="rule-top">${phases}</div>
+      <p class="notice">${lang === "cs" ? "Fázová lišta je tisková varianta, když je matice příliš široká nebo vysoká: množství zůstává v levém sloupci u fáze, která ho spotřebuje." : "The phase rail is the print fallback when the matrix would be too wide or too tall: amounts stay in the left column next to the phase that consumes them."}</p>
+    </section>`;
+}
+
+function renderTable(scaled) {
+  const { recipe, ingredients } = scaled;
+  const lang = state.lang;
+  const { blocks, columns, laminar } = buildMatrix(recipe, ingredients);
+
+  if (!laminar) {
+    return renderRail(scaled).replace(
+      /<p class="section-label">[^<]*<\/p>/,
+      `<p class="section-label">${lang === "cs" ? "Matice není laminární — automaticky fázová lišta" : "Matrix not laminar — phase rail shown"}</p>`
+    );
+  }
+
+  const header = `<tr><th style="width:34%">${lang === "cs" ? "Surovina" : "Ingredient"}</th>${Array.from({ length: columns }, (_, i) => `<th>${lang === "cs" ? "Krok" : "Step"} ${i + 1}</th>`).join("")}</tr>`;
+
+  const grid = ingredients.map(() => Array.from({ length: columns }, () => ({ owner: null })));
+
+  blocks.forEach((block) => {
+    if (!block.rows.length) return;
+    const first = block.rows[0];
+    grid[first][block.col] = { owner: block, span: block.rows.length };
+    for (let k = 1; k < block.rows.length; k++) grid[block.rows[k]][block.col] = { taken: true };
+  });
+
+  const body = ingredients.map((inst, r) => {
+    const lr = leadRest(lang, inst);
+    const cells = [`<td class="ing"><strong>${esc(lr.lead)}</strong> ${esc(lr.rest)}</td>`];
+    for (let c = 0; c < columns; c++) {
+      const cell = grid[r][c];
+      if (cell.owner) cells.push(`<td class="step" rowspan="${cell.span}">${esc(cell.owner.step.label[lang])}<br><span style="opacity:.62">${esc(shortCue(recipe, cell.owner.step, lang))}</span></td>`);
+      else if (!cell.taken) cells.push(`<td class="blank"></td>`);
+    }
+    return `<tr>${cells.join("")}</tr>`;
+  }).join("");
+
+  return `
+    <section class="sheet">
+      <p class="section-label">${lang === "cs" ? "Recept · matice" : "Recipe · matrix"}</p>
+      <h1 class="recipe-title">${esc(recipe.title[lang])}</h1>
+      <p class="meta">${esc(recipe.meta[lang])} · ${state.servings} ${esc(recipe.yieldLabel[lang])}</p>
+      <div class="matrix-wrap">
+        <table class="matrix"><thead>${header}</thead><tbody>${body}</tbody></table>
+      </div>
+      <p class="notice">${lang === "cs" ? "Buňka kroku pokrývá právě ty řádky surovin, které krok spotřebuje. Počet sloupců je nejmenší možné rozložení bez křížení." : "A step cell covers exactly the ingredient rows it consumes. The column count is the smallest layout with no crossing spans."}</p>
+    </section>`;
+}
+
+function renderCover() {
+  const lang = state.lang;
+  const items = RECIPES.map((r, i) => `<li><span class="t">${esc(r.title[lang])}</span><span class="dots"></span><span class="folio">${i * 2 + 1}</span></li>`).join("");
+  return `
+    <section class="sheet">
+      <div class="cover">
+        <div>
+          <p class="cover-mark">Culinary Spec</p>
+          <h1 class="doc-title">${lang === "cs" ? "Sbírka receptů" : "A collection of recipes"}</h1>
+          <p class="doc-sub">${lang === "cs" ? "Dvě receptury, tři gramatiky, jeden zdroj dat. Tiskový prototyp." : "Two recipes, three grammars, one data source. A print prototype."}</p>
+        </div>
+        <div>
+          <p class="section-label">${lang === "cs" ? "Obsah" : "Contents"}</p>
+          <ul class="toc">${items}</ul>
+        </div>
+        <p class="notice">${lang === "cs" ? "Tato stránka je prototyp: ověřuje sazbu, zlom a čitelnost, ne data. Každá gramatika se generuje z téhož dokumentu." : "This page is a prototype: it tests typesetting, page breaks and legibility, not data. Every grammar is generated from the same document."}</p>
+      </div>
+    </section>`;
+}
+
+function render() {
+  const recipe = RECIPES.find((r) => r.id === state.recipe) || RECIPES[0];
+  const scaled = scaleRecipe(recipe, state.servings);
+  const body = state.grammar === "rail" ? renderRail(scaled) : state.grammar === "table" ? renderTable(scaled) : renderParagraph(scaled);
+  document.documentElement.lang = state.lang;
+  $("#doc").innerHTML = renderCover() + body;
+  document.title = (state.lang === "cs" ? "Tiskový list — " : "Print sheet — ") + recipe.title[state.lang];
+}
+
+document.querySelectorAll(".controls button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const key = Object.keys(btn.dataset)[0];
+    state[key] = key === "servings" ? Number(btn.dataset.servings) : btn.dataset[key];
+    document.querySelectorAll(`.controls [data-${key}]`).forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+    render();
+  });
+});
+
+// reflect query-driven defaults in the pressed state before the first render
+(function syncPressed() {
+  Object.entries({ grammar: state.grammar, lang: state.lang, servings: String(state.servings), recipe: state.recipe })
+    .forEach(([key, value]) => {
+      document.querySelectorAll(`.controls [data-${key}]`).forEach((b) =>
+        b.setAttribute("aria-pressed", String(b.dataset[key] === value)));
+    });
+})();
+
+render();
+</script>
+</body>
+</html>
